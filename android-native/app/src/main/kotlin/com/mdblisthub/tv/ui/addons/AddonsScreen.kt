@@ -7,8 +7,6 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,19 +58,38 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * The two addons installed by default, right under the field — one for
- * subtitles, one for streams, which between them get a fresh install working.
+ * The two addons the "Para começar" section recommends — one for subtitles,
+ * one for streams, which between them get a fresh install working. Mirrors
+ * mdblisthub.netlify.app/addons.
  *
  * OpenSubtitles v3 has a fixed manifest that works for anyone, so its button
  * installs directly. AIOStreams does not: its root answers with the site's
  * own PWA manifest, not an addon one — confirmed by hand, the per-user URL
  * only exists after configuring — so its button opens that page instead.
  */
-private data class QuickAddon(val name: String, val url: String? = null, val configureUrl: String? = null)
+private data class QuickAddon(
+    val name: String,
+    val what: String,
+    val host: String? = null,
+    val url: String? = null,
+    val configureUrl: String? = null,
+    val unconfigured: String? = null,
+)
 
 private val QUICK_ADDONS = listOf(
-    QuickAddon(name = "OpenSubtitles v3", url = "https://opensubtitles-v3.strem.io/manifest.json"),
-    QuickAddon(name = "AIOStreams", configureUrl = "https://aiostreams.elfhosted.com/configure"),
+    QuickAddon(
+        name = "OpenSubtitles v3",
+        what = "Legendas em dezenas de idiomas, já indexadas por IMDb ID.",
+        url = "https://opensubtitles-v3.strem.io/manifest.json",
+    ),
+    QuickAddon(
+        name = "AIOStreams",
+        host = "ElfHosted",
+        what = "Junta vários addons de fontes num só, deduplica e reordena os resultados. " +
+            "A URL do manifest é gerada por usuário na configuração.",
+        configureUrl = "https://aiostreams.elfhosted.com/configure",
+        unconfigured = "só funciona pela URL gerada",
+    ),
 )
 
 // -------------------------------------------------------------- view model
@@ -280,7 +296,6 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
                 state = install,
                 onUrlChange = viewModel::onUrlChange,
                 onSubmit = viewModel::installFromField,
-                onQuickInstall = viewModel::install,
             )
         }
 
@@ -304,6 +319,10 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
             items(addons, key = { it.base }) { addon ->
                 AddonRow(addon = addon, onRemove = { viewModel.remove(addon) })
             }
+        }
+
+        item(key = "getting-started") {
+            GettingStartedSection(busy = install.busy, onInstall = viewModel::install)
         }
 
         item(key = "bottom-space") { Spacer(Modifier.height(24.dp)) }
@@ -445,10 +464,7 @@ private fun InstallCard(
     state: InstallState,
     onUrlChange: (String) -> Unit,
     onSubmit: () -> Unit,
-    onQuickInstall: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             // `weight(1f)`, not a fixed width: the button beside it is
@@ -471,48 +487,80 @@ private fun InstallCard(
             )
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            // A phone narrower than "label + two chips" scrolls instead of
-            // clipping or forcing a wrap — there is nothing here worth
-            // reflowing onto a second line.
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        ) {
-            Text(
-                text = "Padrão para começar",
-                style = MaterialTheme.typography.labelLarge,
-                color = HubColors.TextFaint,
-            )
-            QUICK_ADDONS.forEach { quick ->
-                QuickAddChip(
-                    label = quick.name,
-                    enabled = !state.busy,
-                    onClick = {
-                        when {
-                            quick.url != null -> onQuickInstall(quick.url)
-                            quick.configureUrl != null -> openUrl(context, quick.configureUrl)
-                        }
-                    },
-                )
-            }
-        }
-
         state.error?.let { InlineMessage(it, isError = true) }
     }
 }
 
+// -------------------------------------------------------- getting started
+
+/** Mirrors the "Para começar" section on mdblisthub.netlify.app/addons. */
 @Composable
-private fun QuickAddChip(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
+private fun GettingStartedSection(busy: Boolean, onInstall: (String) -> Unit) {
+    val context = LocalContext.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text("Para começar", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            QUICK_ADDONS.forEach { quick ->
+                GettingStartedCard(
+                    quick = quick,
+                    busy = busy,
+                    onInstall = { quick.url?.let(onInstall) },
+                    onConfigure = { quick.configureUrl?.let { openUrl(context, it) } },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GettingStartedCard(
+    quick: QuickAddon,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onConfigure: () -> Unit,
+) {
+    Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(HubColors.Accent.copy(alpha = 0.14f))
-            .border(1.dp, HubColors.Accent.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(HubColors.Surface.copy(alpha = 0.65f))
+            .border(1.dp, HubColors.Border, RoundedCornerShape(14.dp))
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(text = "+ $label", style = MaterialTheme.typography.labelLarge, color = HubColors.AccentSoft)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(quick.name, style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+            quick.host?.let {
+                Text("·  $it", style = MaterialTheme.typography.titleMedium, color = HubColors.TextFaint)
+            }
+            quick.unconfigured?.let {
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(HubColors.Rotten.copy(alpha = 0.14f))
+                        .border(1.dp, HubColors.Rotten.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(text = it, style = MaterialTheme.typography.labelSmall, color = HubColors.Rotten)
+                }
+            }
+        }
+        Text(quick.what, style = MaterialTheme.typography.bodyMedium, color = HubColors.TextDim)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (quick.url != null) {
+                HubButton(
+                    text = if (busy) "Instalando…" else "Instalar",
+                    primary = true,
+                    enabled = !busy,
+                    onClick = onInstall,
+                )
+            }
+            if (quick.configureUrl != null) {
+                HubButton(text = "Abrir configuração", onClick = onConfigure)
+            }
+        }
     }
 }
 
