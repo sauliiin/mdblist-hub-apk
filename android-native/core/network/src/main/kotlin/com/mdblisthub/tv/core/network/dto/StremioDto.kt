@@ -1,0 +1,68 @@
+package com.mdblisthub.tv.core.network.dto
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class StremioManifestDto(
+    val id: String = "",
+    val name: String = "",
+    val version: String? = null,
+    val description: String? = null,
+    val logo: String? = null,
+    val types: List<String> = emptyList(),
+    /**
+     * Either a bare string (`"stream"`) or an object with its own type and id
+     * filters. Only the name is needed here, so both are read as JSON and
+     * flattened by the mapper.
+     */
+    val resources: List<StremioResourceDto> = emptyList(),
+    @SerialName("idPrefixes") val idPrefixes: List<String> = emptyList(),
+    val behaviorHints: StremioAddonHintsDto? = null,
+)
+
+@Serializable
+data class StremioAddonHintsDto(val configurable: Boolean = false)
+
+@Serializable(with = StremioResourceSerializer::class)
+data class StremioResourceDto(val name: String)
+
+@Serializable
+data class StremioStreamsDto(val streams: List<StremioStreamDto> = emptyList())
+
+@Serializable
+data class StremioStreamDto(
+    val name: String? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val url: String? = null,
+    val ytId: String? = null,
+    val infoHash: String? = null,
+    val externalUrl: String? = null,
+    val behaviorHints: StremioStreamHintsDto? = null,
+)
+
+@Serializable
+data class StremioStreamHintsDto(
+    val filename: String? = null,
+    val videoSize: Long? = null,
+    val notWebReady: Boolean = false,
+    /** Headers the source needs; some debrid links 403 without them. */
+    val proxyHeaders: StremioProxyHeadersDto? = null,
+)
+
+@Serializable
+data class StremioProxyHeadersDto(
+    val request: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+data class StremioSubtitlesDto(val subtitles: List<StremioSubtitleDto> = emptyList())
+
+@Serializable
+data class StremioSubtitleDto(
+    val id: String? = null,
+    val url: String = "",
+    val lang: String? = null,
+    @SerialName("SubEncoding") val encoding: String? = null,
+)

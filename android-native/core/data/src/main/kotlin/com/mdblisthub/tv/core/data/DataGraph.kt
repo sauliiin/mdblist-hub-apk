@@ -1,0 +1,60 @@
+package com.mdblisthub.tv.core.data
+
+import android.content.Context
+import com.mdblisthub.tv.core.data.repository.AddonsRepository
+import com.mdblisthub.tv.core.data.repository.AuthRepository
+import com.mdblisthub.tv.core.data.repository.FirebaseSyncRepository
+import com.mdblisthub.tv.core.data.repository.LibraryRepository
+import com.mdblisthub.tv.core.data.repository.ListsRepository
+import com.mdblisthub.tv.core.data.repository.MediaRepository
+import com.mdblisthub.tv.core.data.repository.PlaybackRepository
+import com.mdblisthub.tv.core.data.repository.StreamsRepository
+import com.mdblisthub.tv.core.data.repository.StremioAccountRepository
+import com.mdblisthub.tv.core.data.work.ImageWarmer
+import com.mdblisthub.tv.core.data.work.MetadataScheduler
+import com.mdblisthub.tv.core.database.HubDatabase
+import com.mdblisthub.tv.core.network.NetworkModule
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+
+/**
+ * The object graph, built once by the Application.
+ *
+ * Everything here is a plain constructor call. The graph is shallow enough
+ * that a DI framework would add an annotation processor, a build-time code
+ * generation step and an indirection to read through — for no property this
+ * file does not already have.
+ */
+class DataGraph(context: Context) {
+
+    private val appContext = context.applicationContext
+
+    /** Survives every screen; the prefetcher and one-off writes live on it. */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    val network = NetworkModule(appContext)
+    val database = HubDatabase.create(appContext)
+    val session = SessionStore(appContext)
+    val syncStore = SyncStore(appContext)
+
+    val auth = AuthRepository(network.mdblist, session, database)
+    val lists = ListsRepository(network.mdblist, session, database)
+    val media = MediaRepository(network.tmdb, network.mdblist, network.omdb, session, database)
+    val addons = AddonsRepository(network.stremio, database)
+    val streams = StreamsRepository(network.stremio, addons)
+    val library = LibraryRepository(network.mdblist, session, database)
+    val playback = PlaybackRepository(network.mdblist, session, database)
+    val stremioAccount = StremioAccountRepository(network.stremioAccount, syncStore, addons)
+    val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, session, addons, scope)
+
+    val scheduler = MetadataScheduler(appContext)
+    val prefetcher = MetadataPrefetcher(media, scope)
+
+    /**
+     * Assigned by the app once the Coil loader exists, which cannot happen
+     * before this graph because the loader shares its OkHttp client. The
+     * no-op default means a worker that runs in between simply warms nothing.
+     */
+    var imageWarmer: ImageWarmer = ImageWarmer { }
+}
