@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.RatingBadge
+import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.SeasonSummary
 
 /**
@@ -73,6 +74,7 @@ data class MediaDetailEntity(
     val ratings: List<RatingBadge>,
     val seasons: List<SeasonSummary>,
     val recommendations: List<MediaItem>,
+    val reviews: List<Review>,
     val fetchedAt: Long,
 )
 

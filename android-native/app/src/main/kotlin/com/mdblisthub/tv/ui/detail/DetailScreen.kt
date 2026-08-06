@@ -28,14 +28,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -50,6 +54,8 @@ import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.Review
+import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.MediaRow
@@ -58,6 +64,7 @@ import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -79,6 +86,8 @@ fun DetailScreen(
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     BackHandler { onBack() }
 
@@ -92,6 +101,7 @@ fun DetailScreen(
         FanartBackdrop(url = current.backdropUrl, scrim = 0.86f)
 
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(HubDimens.RowSpacing),
             contentPadding = PaddingValues(
@@ -158,7 +168,16 @@ fun DetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier
                             .horizontalScroll(rememberScrollState())
-                            .height(IntrinsicSize.Min),
+                            .height(IntrinsicSize.Min)
+                            // Coming back up from cast/reviews/episodes to this
+                            // row is the moment the poster, rating and overview
+                            // above it need to be visible again, so focus
+                            // landing here snaps the list back to the top.
+                            .onFocusChanged { state ->
+                                if (state.hasFocus) {
+                                    coroutineScope.launch { listState.animateScrollToItem(0) }
+                                }
+                            },
                     ) {
                         HubButton(
                             text = if (type == MediaType.SHOW) "Assistir T${season}E1" else "Assistir",
@@ -252,6 +271,12 @@ fun DetailScreen(
             if (current.cast.isNotEmpty()) {
                 item(key = "cast") {
                     CastRow(current)
+                }
+            }
+
+            if (current.reviews.isNotEmpty()) {
+                item(key = "reviews") {
+                    ReviewsRow(current.reviews)
                 }
             }
 
@@ -377,6 +402,80 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
             }
         }
     }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ReviewsRow(reviews: List<Review>) {
+    if (reviews.isEmpty()) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Reviews",
+            style = MaterialTheme.typography.titleLarge,
+            color = HubColors.Text,
+            modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
+            modifier = Modifier.focusRestorer(),
+        ) {
+            items(reviews, key = { "${it.provider}-${it.author}-${it.updatedAt}" }) { review ->
+                Column(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(HubColors.Surface.copy(alpha = 0.7f))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = review.author,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = HubColors.Text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        review.rating?.let {
+                            Text(
+                                text = "★ ${String.format("%.1f", it)}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = HubColors.Imdb,
+                            )
+                        }
+                        Text(
+                            text = review.provider.label(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = review.provider.color(),
+                        )
+                    }
+                    Text(
+                        text = review.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = HubColors.TextDim,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun ReviewProvider.label(): String = when (this) {
+    ReviewProvider.TRAKT -> "Trakt"
+    ReviewProvider.TMDB -> "TMDB"
+}
+
+private fun ReviewProvider.color(): Color = when (this) {
+    ReviewProvider.TRAKT -> HubColors.Trakt
+    ReviewProvider.TMDB -> HubColors.Tmdb
 }
 
 /**

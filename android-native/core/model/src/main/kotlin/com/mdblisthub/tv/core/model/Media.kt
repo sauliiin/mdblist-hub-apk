@@ -46,6 +46,19 @@ data class CastMember(
     val profileUrl: String?,
 )
 
+/** Where a mirrored review came from — mdblist proxies both. */
+@Serializable
+enum class ReviewProvider { TRAKT, TMDB }
+
+@Serializable
+data class Review(
+    val author: String,
+    val content: String,
+    val rating: Double? = null,
+    val provider: ReviewProvider = ReviewProvider.TMDB,
+    val updatedAt: String? = null,
+)
+
 @Serializable
 data class SeasonSummary(
     val seasonNumber: Int,
@@ -102,6 +115,7 @@ data class MediaDetail(
     val ratings: List<RatingBadge> = emptyList(),
     val seasons: List<SeasonSummary> = emptyList(),
     val recommendations: List<MediaItem> = emptyList(),
+    val reviews: List<Review> = emptyList(),
     val budget: Long? = null,
     val revenue: Long? = null,
 ) {

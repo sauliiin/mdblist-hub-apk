@@ -4,6 +4,7 @@ import androidx.room.TypeConverter
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.RatingBadge
+import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.SeasonSummary
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -52,6 +53,12 @@ class Converters {
 
     @TypeConverter
     fun toItems(value: String): List<MediaItem> = decode(value, emptyList())
+
+    @TypeConverter
+    fun fromReviews(value: List<Review>): String = cacheJson.encodeToString(value)
+
+    @TypeConverter
+    fun toReviews(value: String): List<Review> = decode(value, emptyList())
 
     /**
      * A cache row that no longer parses is a row written by an older build,

@@ -15,6 +15,8 @@ import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaList
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ResumePoint
+import com.mdblisthub.tv.core.model.Review
+import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.model.SeasonSummary
 import com.mdblisthub.tv.core.model.TmdbImages
 import com.mdblisthub.tv.core.network.HttpClients
@@ -196,6 +198,17 @@ fun buildDetailEntity(
                 score = (result.voteAverage * 10).roundToInt().takeIf { it > 0 },
             )
         },
+        reviews = info?.reviews.orEmpty().mapNotNull { review ->
+            review.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            Review(
+                author = review.author.ifBlank { "Anônimo" },
+                content = review.content,
+                rating = review.rating,
+                // mdblist's `provider_id`: 1 = Trakt, 2 = TMDB.
+                provider = if (review.providerId == 1) ReviewProvider.TRAKT else ReviewProvider.TMDB,
+                updatedAt = review.updatedAt,
+            )
+        },
         fetchedAt = now,
     )
 }
@@ -248,6 +261,7 @@ fun MediaDetailEntity.toDomain() = MediaDetail(
     ratings = ratings,
     seasons = seasons,
     recommendations = recommendations,
+    reviews = reviews,
     budget = budget,
     revenue = revenue,
 )
