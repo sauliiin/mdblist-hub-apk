@@ -100,6 +100,14 @@ data class BucketEntryDto(
     val ids: MdbIdsDto? = null,
     val movie: BucketTitleDto? = null,
     val show: BucketTitleDto? = null,
+    /**
+     * `sync/watched` only — mdblist mirrors Trakt's sync shape here, where
+     * this is what orders "most recently watched". Unverified against a live
+     * response (the field could be named differently); a title that never
+     * rises to the top of "porque você assistiu" despite being watched
+     * recently is the symptom to look for if this guess is wrong.
+     */
+    @SerialName("last_watched_at") val lastWatchedAt: String? = null,
 )
 
 @Serializable

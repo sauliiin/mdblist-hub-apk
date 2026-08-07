@@ -165,6 +165,8 @@ data class ResumeEntity(
     val title: String,
     val posterUrl: String?,
     val backdropUrl: String?,
+    /** 0–100, IMDb first — same scale and source order as every other card. */
+    val score: Int?,
     val season: Int?,
     val episode: Int?,
     val progress: Float,

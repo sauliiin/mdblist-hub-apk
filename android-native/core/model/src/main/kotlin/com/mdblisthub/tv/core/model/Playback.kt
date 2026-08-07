@@ -35,6 +35,8 @@ data class ResumePoint(
     val title: String,
     val posterUrl: String? = null,
     val backdropUrl: String? = null,
+    /** 0–100, IMDb first — same scale and source order as every other card. */
+    val score: Int? = null,
     val season: Int? = null,
     val episode: Int? = null,
     /** 0–100. */

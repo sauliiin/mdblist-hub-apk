@@ -495,17 +495,33 @@ private fun PlayerOsd(
         val progressBarInteraction = remember { MutableInteractionSource() }
         val progressBarFocused by progressBarInteraction.collectIsFocusedAsState()
         val progressBarHeight by animateDpAsState(
-            if (progressBarFocused) 10.dp else 6.dp,
+            if (progressBarFocused) 12.dp else 6.dp,
             focusTween(),
             label = "progress-bar-height",
         )
+        val progressBarGlow by animateDpAsState(
+            if (progressBarFocused) 3.dp else 0.dp,
+            focusTween(),
+            label = "progress-bar-glow",
+        )
 
+        // A ring around the track, not just a colour swap on the fill: the
+        // fill is a thin sliver at the very start of playback, and a colour
+        // change alone on almost-no-area is exactly the kind of cue this
+        // session's OSD buttons already learned reads as "not evident enough"
+        // from a couch. The ring stays legible regardless of how much of the
+        // bar is actually filled in.
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(progressBarHeight)
-                .clip(RoundedCornerShape(5.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(HubColors.Border)
+                .border(
+                    width = progressBarGlow,
+                    color = if (progressBarFocused) HubColors.Accent else HubColors.Border.copy(alpha = 0f),
+                    shape = RoundedCornerShape(6.dp),
+                )
                 .focusRequester(progressBarFocusRequester)
                 .focusable(interactionSource = progressBarInteraction)
                 .onKeyEvent { event ->
@@ -526,7 +542,7 @@ private fun PlayerOsd(
                 Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(fraction)
-                    .clip(RoundedCornerShape(5.dp))
+                    .clip(RoundedCornerShape(6.dp))
                     .background(if (progressBarFocused) HubColors.AccentSoft else HubColors.Accent),
             )
         }

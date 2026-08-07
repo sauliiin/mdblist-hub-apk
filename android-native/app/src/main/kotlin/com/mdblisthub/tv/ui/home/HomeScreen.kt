@@ -52,6 +52,7 @@ fun HomeScreen(
     val lists by viewModel.lists.collectAsStateWithLifecycle()
     val resumePoints by viewModel.resumePoints.collectAsStateWithLifecycle()
     val focused by viewModel.focused.collectAsStateWithLifecycle()
+    val becauseYouWatched by viewModel.becauseYouWatched.collectAsStateWithLifecycle()
 
     val rail = listOf(
         RailItem("home", "Início", Icons.Default.Home),
@@ -119,6 +120,18 @@ fun HomeScreen(
                         onItemClick = onOpenTitle,
                         onItemFocused = viewModel::onFocused,
                         onReachedEnd = { viewModel.loadMore(list.id) },
+                    )
+                }
+
+                // "Porque você assistiu" — always last, since it is built from
+                // the five most recent watches rather than curated like the
+                // rows above it.
+                items(becauseYouWatched, key = { "byw-${it.seedTitle}" }) { row ->
+                    MediaRow(
+                        title = "Porque você assistiu ${row.seedTitle}",
+                        items = row.items,
+                        onItemClick = onOpenTitle,
+                        onItemFocused = viewModel::onFocused,
                     )
                 }
             }
@@ -202,5 +215,5 @@ private fun ResumePoint.toCardItem() = MediaItem(
     imdbId = imdbId,
     posterUrl = posterUrl,
     backdropUrl = backdropUrl,
-    score = null,
+    score = score,
 )

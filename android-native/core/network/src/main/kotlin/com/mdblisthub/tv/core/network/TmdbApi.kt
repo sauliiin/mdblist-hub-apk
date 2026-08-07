@@ -33,6 +33,15 @@ interface TmdbApi {
         @Query("language") language: String,
     ): TmdbSeasonDto
 
+    /** Titles TMDB pairs with this one — the "porque você assistiu" rows. */
+    @GET("{type}/{id}/recommendations")
+    suspend fun recommendations(
+        @Path("type") type: String,
+        @Path("id") tmdbId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String,
+    ): TmdbPageDto
+
     @GET("search/multi")
     suspend fun search(
         @Query("api_key") apiKey: String,

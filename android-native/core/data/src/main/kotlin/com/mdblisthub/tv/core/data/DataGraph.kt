@@ -8,6 +8,7 @@ import com.mdblisthub.tv.core.data.repository.LibraryRepository
 import com.mdblisthub.tv.core.data.repository.ListsRepository
 import com.mdblisthub.tv.core.data.repository.MediaRepository
 import com.mdblisthub.tv.core.data.repository.PlaybackRepository
+import com.mdblisthub.tv.core.data.repository.RecommendationsRepository
 import com.mdblisthub.tv.core.data.repository.StreamsRepository
 import com.mdblisthub.tv.core.data.repository.WikipediaRepository
 import com.mdblisthub.tv.core.data.work.ImageWarmer
@@ -47,6 +48,7 @@ class DataGraph(context: Context) {
     val playback = PlaybackRepository(network.mdblist, session, database, media)
     val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, session, addons, scope)
     val wikipedia = WikipediaRepository(network.wikipedia)
+    val recommendations = RecommendationsRepository(network.mdblist, network.tmdb, media, session)
 
     val scheduler = MetadataScheduler(appContext)
     val prefetcher = MetadataPrefetcher(media, scope)

@@ -53,11 +53,11 @@ class PlaybackRepository(
     }
 
     /**
-     * mdblist's playback sync hands back ids and progress only, no artwork —
-     * see [toResumeEntity] — so each row borrows [MediaRepository]'s detail
-     * cache for its poster. `ensureDetail` is a no-op once a title has been
-     * opened anywhere in the app, and cheap to run for the handful of rows
-     * "Continuar assistindo" ever holds.
+     * mdblist's playback sync hands back ids and progress only, no artwork or
+     * rating — see [toResumeEntity] — so each row borrows [MediaRepository]'s
+     * detail cache for its poster and score. `ensureDetail` is a no-op once a
+     * title has been opened anywhere in the app, and cheap to run for the
+     * handful of rows "Continuar assistindo" ever holds.
      */
     private suspend fun withArtwork(entities: List<ResumeEntity>): List<ResumeEntity> = coroutineScope {
         entities.map { entity ->
@@ -66,7 +66,17 @@ class PlaybackRepository(
                 val type = MediaType.parse(entity.type)
                 media.ensureDetail(type, tmdbId)
                 val detail = media.observeDetail(type, tmdbId).first()
-                if (detail == null) entity else entity.copy(posterUrl = detail.posterUrl, backdropUrl = detail.backdropUrl)
+                if (detail == null) {
+                    entity
+                } else {
+                    entity.copy(
+                        posterUrl = detail.posterUrl,
+                        backdropUrl = detail.backdropUrl,
+                        // First in the list is IMDb when mdblist reported one
+                        // — same order every other card's badge reads from.
+                        score = detail.ratings.firstOrNull()?.score,
+                    )
+                }
             }
         }.awaitAll()
     }

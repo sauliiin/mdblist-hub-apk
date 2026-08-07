@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaList
+import com.mdblisthub.tv.core.model.RecommendationRow
 import com.mdblisthub.tv.core.model.ResumePoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +31,15 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     private val _focused = MutableStateFlow<MediaItem?>(null)
     val focused: StateFlow<MediaItem?> = _focused.asStateFlow()
 
+    /**
+     * "Porque você assistiu" — built once per visit, not persisted: unlike
+     * the mdblist rows above, TMDB's recommendations have nothing worth
+     * caching in Room for, and the five seeds are cheap to re-derive from
+     * whatever "Last Watched" looks like right now.
+     */
+    private val _becauseYouWatched = MutableStateFlow<List<RecommendationRow>>(emptyList())
+    val becauseYouWatched: StateFlow<List<RecommendationRow>> = _becauseYouWatched.asStateFlow()
+
     init {
         viewModelScope.launch {
             graph.lists.refreshLists()
@@ -37,6 +47,9 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
             // New titles usually arrived with that sync; let the hydration
             // worker know there is something to chew on.
             graph.scheduler.hydrateSoon()
+        }
+        viewModelScope.launch {
+            _becauseYouWatched.value = graph.recommendations.becauseYouWatched()
         }
     }
 
