@@ -4,10 +4,14 @@ import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.data.mapper.toResumeEntity
 import com.mdblisthub.tv.core.database.HubDatabase
+import com.mdblisthub.tv.core.database.entity.ResumeEntity
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ResumePoint
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.network.MdblistApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -25,6 +29,7 @@ class PlaybackRepository(
     private val api: MdblistApi,
     private val session: SessionStore,
     private val database: HubDatabase,
+    private val media: MediaRepository,
 ) {
     private val dao = database.playbackDao()
 
@@ -44,7 +49,26 @@ class PlaybackRepository(
 
         val now = System.currentTimeMillis()
         val sessions = api.playback(key).mapNotNull { it.toResumeEntity(now) }
-        dao.replaceResumePoints(sessions)
+        dao.replaceResumePoints(withArtwork(sessions))
+    }
+
+    /**
+     * mdblist's playback sync hands back ids and progress only, no artwork —
+     * see [toResumeEntity] — so each row borrows [MediaRepository]'s detail
+     * cache for its poster. `ensureDetail` is a no-op once a title has been
+     * opened anywhere in the app, and cheap to run for the handful of rows
+     * "Continuar assistindo" ever holds.
+     */
+    private suspend fun withArtwork(entities: List<ResumeEntity>): List<ResumeEntity> = coroutineScope {
+        entities.map { entity ->
+            async {
+                val tmdbId = entity.tmdbId ?: return@async entity
+                val type = MediaType.parse(entity.type)
+                media.ensureDetail(type, tmdbId)
+                val detail = media.observeDetail(type, tmdbId).first()
+                if (detail == null) entity else entity.copy(posterUrl = detail.posterUrl, backdropUrl = detail.backdropUrl)
+            }
+        }.awaitAll()
     }
 
     suspend fun resumeFor(target: ScrobbleTarget): Float? =

@@ -18,10 +18,17 @@ android {
 
 dependencies {
     api(projects.core.model)
-    // The only module that sees libVLC. Everything upstream talks to the
+    // The only module that sees mpv. Everything upstream talks to the
     // engine through `PlaybackController`, so swapping the backend never
     // reaches the screens.
-    api(libs.libvlc)
+    //
+    // No Maven coordinate exists for this — Stremio's own mpv wrapper
+    // (github.com/jarnedemeulemeester/libmpv-android, the same one their
+    // GitHub org actively forks and builds from) only ships a GitHub
+    // Release AAR, not a published artifact. Vendored here rather than
+    // resolved because JitPack cannot complete this repo's NDK cross-compile
+    // build within its time limit — every version there shows `"Error"`.
+    api(files("libs/libmpv-release.aar"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)

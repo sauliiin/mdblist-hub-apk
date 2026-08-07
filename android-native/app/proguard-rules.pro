@@ -1,7 +1,6 @@
-# libVLC reaches its Java classes from native code, so nothing under
-# org.videolan can be renamed or stripped.
--keep class org.videolan.** { *; }
--dontwarn org.videolan.**
+# mpv (dev.jdtech.mpv.MPVLib) reaches its Java class from native code, but
+# that keep rule ships as a consumer rule inside the AAR itself and is merged
+# in automatically — nothing to restate here.
 
 # kotlinx.serialization keeps the generated serializers on the companion.
 -keepclassmembers class ** {

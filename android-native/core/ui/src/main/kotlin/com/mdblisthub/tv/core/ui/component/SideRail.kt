@@ -2,6 +2,8 @@ package com.mdblisthub.tv.core.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -40,10 +42,11 @@ data class RailItem(
 /**
  * Estuary's side menu.
  *
- * Collapsed it is a strip of icons; the moment focus enters it, it widens and
- * the labels appear. That behaviour is the signature of the skin this
- * interface is modelled on, and it earns its place: it costs no screen while
- * you are browsing posters, and needs no discovery when you want it.
+ * Fully hidden while a poster elsewhere on screen holds focus, so browsing
+ * rows gets the whole width; the moment focus lands back on the rail it
+ * widens and the labels appear. That behaviour is the signature of the skin
+ * this interface is modelled on, and it earns its place: it costs no screen
+ * while you are browsing posters, and needs no discovery when you want it.
  */
 @Composable
 fun SideRail(
@@ -58,15 +61,19 @@ fun SideRail(
         modifier = modifier
             .fillMaxHeight()
             .onFocusChanged { expanded = it.hasFocus }
-            .animateContentSize()
-            .width(if (expanded) 232.dp else 84.dp)
+            // A tween here, not the default spring: the posters it shares
+            // the screen with ease in on the same curve (`railFocusTween`),
+            // and a spring's overshoot next to a tween's flat arrival is
+            // exactly the kind of mismatch that reads as inconsistent.
+            .animateContentSize(animationSpec = railFocusTween())
+            .width(if (expanded) 232.dp else 0.dp)
             .background(
                 Brush.horizontalGradient(
                     0f to HubColors.Background,
                     1f to HubColors.Background.copy(alpha = if (expanded) 0.92f else 0f),
                 )
             )
-            .padding(vertical = 32.dp, horizontal = 16.dp),
+            .padding(vertical = 32.dp, horizontal = if (expanded) 16.dp else 0.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         items.forEach { item ->
@@ -96,13 +103,18 @@ private fun RailRow(
             selected -> HubColors.SurfaceStrong
             else -> HubColors.Background.copy(alpha = 0f)
         },
+        animationSpec = railFocusTween(),
         label = "rail-background",
     )
-    val tint = when {
-        focused -> HubColors.Text
-        selected -> HubColors.AccentSoft
-        else -> HubColors.TextFaint
-    }
+    val tint by animateColorAsState(
+        targetValue = when {
+            focused -> HubColors.Text
+            selected -> HubColors.AccentSoft
+            else -> HubColors.TextFaint
+        },
+        animationSpec = railFocusTween(),
+        label = "rail-tint",
+    )
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -128,3 +140,6 @@ private fun RailRow(
         }
     }
 }
+
+/** Matches [posterFocusTween] in `PosterCard` — one motion language for the screen. */
+private fun <T> railFocusTween() = tween<T>(durationMillis = 200, easing = FastOutSlowInEasing)

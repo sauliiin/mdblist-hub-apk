@@ -16,14 +16,16 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // libVLC ships no 32-bit x86 build worth carrying, and no TV device
-        // needs it. Dropping it here keeps the universal APK from doubling.
+        // The mpv engine ships no 32-bit x86 build worth carrying, and no TV
+        // device needs it. Dropping it here keeps the universal APK from
+        // doubling.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64") }
     }
 
-    // libVLC's native libraries are the bulk of this app. One APK per ABI is
-    // what turns a ~90 MB universal build into a ~30 MB install; the universal
-    // one stays available for sideloading onto an unknown box.
+    // mpv's native libraries (mpv itself plus the ffmpeg stack it links) are
+    // the bulk of this app. One APK per ABI is what turns a large universal
+    // build into a much smaller install; the universal one stays available
+    // for sideloading onto an unknown box.
     splits {
         abi {
             isEnable = true

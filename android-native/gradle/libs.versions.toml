@@ -8,7 +8,12 @@
 # two below are held one release back. Raising all three together is a single
 # coordinated change — see README.
 compileSdk = "36"
-minSdk = "24"
+# 26, not 24: the mpv engine's AAR declares minSdkVersion 26 (its native
+# MediaCodec/Surface path assumes Oreo APIs), so the manifest merger holds
+# the floor here regardless of what the rest of the app could otherwise run
+# on. Android 8.0 shipped in 2017 — the boxes this excludes are rare on TVs
+# still receiving addon-based streaming apps at all.
+minSdk = "26"
 targetSdk = "36"
 
 agp = "8.13.2"
@@ -31,11 +36,6 @@ serialization = "1.11.0"
 okhttp = "5.4.0"
 retrofit = "3.0.0"
 coil = "3.5.0"
-
-# libVLC 3.x is the stable branch. `libvlc-all` carries the native libraries
-# for every ABI; the ABI splits in app/build.gradle.kts are what keep an
-# installed APK down to one of them.
-libvlc = "3.7.5"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -75,8 +75,6 @@ retrofit-serialization = { module = "com.squareup.retrofit2:converter-kotlinx-se
 
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
-
-libvlc = { module = "org.videolan.android:libvlc-all", version.ref = "libvlc" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

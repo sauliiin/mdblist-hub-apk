@@ -61,29 +61,3 @@ data class Addon(
         }
     }
 }
-
-/**
- * What an import from a Stremio account actually did.
- *
- * A bare count hides the interesting half: an addon the account has that
- * never lands here is exactly the case worth reporting, and it needs a reason
- * attached to be actionable — see `skipped`.
- */
-data class ImportReport(
-    /** Entries the API returned. */
-    val received: Int,
-    /** Names of the addons that landed. */
-    val imported: List<String>,
-    val skipped: List<SkippedAddon>,
-    /**
-     * Every entry the API answered with, untouched.
-     *
-     * The ground truth for "I added it in Stremio and it did not come": if an
-     * addon is missing here, it never reached the account, and nothing on
-     * this side would produce it.
-     */
-    val entries: List<AddonRef>,
-)
-
-data class SkippedAddon(val name: String, val url: String, val reason: String)
-data class AddonRef(val name: String, val url: String)

@@ -1,8 +1,8 @@
 package com.mdblisthub.tv.player
 
-import android.net.Uri
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
+import dev.jdtech.mpv.MPVLib
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,9 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.interfaces.IMedia
 
 /**
  * Plays a title, deciding on its own which link to use.
@@ -25,17 +22,17 @@ import org.videolan.libvlc.interfaces.IMedia
  * decoder chokes on are all the same event here — move to the next one — and
  * none of them is worth a dialog.
  *
- * Success is defined as video output, not as libVLC reporting "playing".
- * VLC says Playing as soon as it has opened a connection, which a 200-with-an-
- * error-page satisfies just as well as a real file; the first decoded frame
- * does not lie.
+ * Success is defined as the file actually loading (mpv's `file-loaded`
+ * event), not as a command being accepted — a 200-with-an-error-page opens a
+ * connection just as readily as a real stream, but only a real one gets its
+ * headers and tracks parsed.
  */
 class PlaybackController(
-    engine: VlcEngine,
+    engine: MpvEngine,
     private val scope: CoroutineScope,
-) {
-    private val libVlc = engine.libVlc
-    val player: MediaPlayer = MediaPlayer(libVlc)
+) : MPVLib.EventObserver {
+
+    val mpv: MPVLib = engine.mpv
 
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -45,7 +42,7 @@ class PlaybackController(
     private var queueIndex = -1
     private var passes = 0
 
-    /** Resume point, applied once the first frame arrives. */
+    /** Resume point, applied once the file has loaded. */
     private var resumePercent: Float? = null
     private var resumeApplied = false
 
@@ -54,7 +51,7 @@ class PlaybackController(
     private var pendingSubtitle: SubtitleOption? = null
 
     init {
-        player.setEventListener(::onEvent)
+        mpv.addObserver(this)
     }
 
     /**
@@ -119,134 +116,169 @@ class PlaybackController(
             )
         }
 
-        val media = Media(libVlc, Uri.parse(url)).apply {
-            setHWDecoderEnabled(true, false)
-            addOption(":network-caching=$NETWORK_CACHING_MS")
-
-            // libVLC 3 exposes only these two of the headers an addon may ask
-            // for, and they are the two that matter: several debrid mirrors
-            // answer 403 without the user agent they issued the link to.
-            candidate.headers["User-Agent"]?.let { addOption(":http-user-agent=$it") }
-            candidate.headers["Referer"]?.let { addOption(":http-referrer=$it") }
-        }
-
-        player.media = media
-        media.release()
-        player.play()
+        // Explicitly reset to mpv's own default (an empty string) rather than
+        // only setting when the candidate specifies one: the engine is one
+        // shared mpv instance reused across every candidate, so a header the
+        // previous mirror needed would otherwise leak into this one's request.
+        mpv.setPropertyString("user-agent", candidate.headers["User-Agent"] ?: "")
+        mpv.setPropertyString(
+            "http-header-fields",
+            candidate.headers["Referer"]?.let { "Referer: $it" } ?: "",
+        )
+        mpv.command(arrayOf("loadfile", url, "replace"))
 
         watchdog = scope.launch {
             delay(ATTEMPT_TIMEOUT_MS)
-            // Still no picture: treat it as a dead source rather than letting
-            // one unresponsive host hold the screen indefinitely.
+            // Still nothing loaded: treat it as a dead source rather than
+            // letting one unresponsive host hold the screen indefinitely.
             if (isActive) advance()
         }
     }
 
-    private fun onEvent(event: MediaPlayer.Event) {
-        when (event.type) {
-            // The frame that proves the source is real.
-            MediaPlayer.Event.Vout -> if (event.voutCount > 0) onFirstFrame()
-
-            MediaPlayer.Event.Playing -> _state.update {
-                if (it.phase == PlaybackPhase.RESOLVING) it else it.copy(phase = PlaybackPhase.PLAYING)
-            }
-
-            MediaPlayer.Event.Paused -> _state.update {
-                if (it.phase == PlaybackPhase.RESOLVING) it else it.copy(phase = PlaybackPhase.PAUSED)
-            }
-
-            MediaPlayer.Event.Buffering -> _state.update {
-                if (it.phase == PlaybackPhase.RESOLVING || event.buffering >= 100f) it
-                else it.copy(phase = PlaybackPhase.BUFFERING)
-            }
-
-            MediaPlayer.Event.EncounteredError -> advance()
-
-            MediaPlayer.Event.EndReached -> {
-                // A source that ends immediately never really started, so it
-                // rejoins the cascade instead of being reported as finished.
-                if (_state.value.phase == PlaybackPhase.RESOLVING) advance()
-                else _state.update { it.copy(phase = PlaybackPhase.ENDED) }
-            }
-
-            MediaPlayer.Event.LengthChanged ->
-                _state.update { it.copy(durationMs = event.lengthChanged) }
-
-            MediaPlayer.Event.TimeChanged ->
-                _state.update { it.copy(positionMs = event.timeChanged) }
+    // mpv's own event thread calls these — never the UI thread. `_state` is a
+    // StateFlow (safe to mutate from anywhere) and `scope.launch` is a safe
+    // entry point from any thread, so nothing here needs to hop threads
+    // itself; the libVLC listener this replaced ran under the same rule.
+    override fun event(eventId: Int) {
+        when (eventId) {
+            MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> onFileLoaded()
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE -> onEndFile()
+            else -> Unit
         }
     }
 
-    private fun onFirstFrame() {
+    override fun eventProperty(property: String) = Unit
+    override fun eventProperty(property: String, value: Long) = Unit
+    override fun eventProperty(property: String, value: Double) = Unit
+    override fun eventProperty(property: String, value: Boolean) = Unit
+    override fun eventProperty(property: String, value: String) = Unit
+
+    private fun onFileLoaded() {
         watchdog?.cancel()
         watchdog = null
 
         if (!resumeApplied) {
             resumeApplied = true
-            resumePercent?.let { player.position = it / 100f }
+            resumePercent?.let { mpv.setPropertyDouble("percent-pos", it.toDouble()) }
         }
         pendingSubtitle?.let(::attachSubtitle)
 
         _state.update {
             it.copy(
                 phase = PlaybackPhase.PLAYING,
-                durationMs = player.length.coerceAtLeast(0),
-                audioTracks = player.readTracks(audio = true),
-                subtitleTracks = player.readTracks(audio = false),
-                currentAudioId = player.audioTrack,
-                currentSubtitleId = player.spuTrack,
+                durationMs = durationMs(),
+                audioTracks = readTracks("audio"),
+                subtitleTracks = readTracks("sub"),
+                currentAudioId = mpv.getPropertyInt("aid") ?: -1,
+                currentSubtitleId = mpv.getPropertyInt("sid") ?: -1,
                 error = null,
             )
         }
         startTicker()
     }
 
+    /**
+     * A minimal JNI wrapper: unlike libVLC's distinct error/end-reached
+     * events, mpv's `end-file` fires the same way whether the file finished
+     * cleanly or died mid-stream, with no reason code surfaced here. Distance
+     * from the known duration is what stands in for it — a source that drops
+     * three minutes short of the runtime looks exactly like one that never
+     * really started, so both rejoin the cascade instead of stopping
+     * playback outright.
+     */
+    private fun onEndFile() {
+        if (_state.value.phase == PlaybackPhase.RESOLVING) {
+            advance()
+            return
+        }
+
+        val duration = _state.value.durationMs
+        val finishedCleanly = duration <= 0 || _state.value.positionMs >= duration - END_TOLERANCE_MS
+        if (finishedCleanly) {
+            _state.update { it.copy(phase = PlaybackPhase.ENDED) }
+        } else {
+            advance()
+        }
+    }
+
     private fun fail(message: String) {
         watchdog?.cancel()
         ticker?.cancel()
-        runCatching { player.stop() }
+        runCatching { mpv.command(arrayOf("stop")) }
         _state.update { it.copy(phase = PlaybackPhase.FAILED, error = message) }
     }
 
     /**
-     * libVLC reports time through events, but only while decoding — a paused
-     * player goes silent. The tick keeps the seek bar honest and refreshes the
-     * track lists, which arrive a beat after the first frame.
+     * mpv reports time through properties, which only change while decoding
+     * — a paused player goes quiet. The tick keeps the seek bar honest, the
+     * play/pause phase in sync with the engine, and refreshes the track
+     * lists, which can grow after a subtitle is added mid-playback.
      */
     private fun startTicker() {
         ticker?.cancel()
         ticker = scope.launch {
             while (isActive) {
                 delay(TICK_MS)
-                if (!player.isReleased) {
-                    _state.update {
-                        it.copy(
-                            positionMs = player.time.coerceAtLeast(0),
-                            durationMs = player.length.coerceAtLeast(0),
-                            currentAudioId = player.audioTrack,
-                            currentSubtitleId = player.spuTrack,
-                        )
-                    }
+                _state.update {
+                    it.copy(
+                        positionMs = positionMs(),
+                        durationMs = durationMs(),
+                        currentAudioId = mpv.getPropertyInt("aid") ?: it.currentAudioId,
+                        currentSubtitleId = mpv.getPropertyInt("sid") ?: it.currentSubtitleId,
+                        phase = nextPollPhase(it.phase),
+                    )
                 }
             }
+        }
+    }
+
+    private fun nextPollPhase(current: PlaybackPhase): PlaybackPhase = when (current) {
+        PlaybackPhase.RESOLVING, PlaybackPhase.FAILED, PlaybackPhase.ENDED, PlaybackPhase.IDLE -> current
+        else -> when {
+            mpv.getPropertyBoolean("paused-for-cache") == true -> PlaybackPhase.BUFFERING
+            mpv.getPropertyBoolean("pause") == true -> PlaybackPhase.PAUSED
+            else -> PlaybackPhase.PLAYING
+        }
+    }
+
+    private fun positionMs(): Long = ((mpv.getPropertyDouble("time-pos") ?: 0.0) * 1000).toLong().coerceAtLeast(0)
+    private fun durationMs(): Long = ((mpv.getPropertyDouble("duration") ?: 0.0) * 1000).toLong().coerceAtLeast(0)
+
+    /** mpv hands tracks back as an indexed list of sub-properties, not a struct. */
+    private fun readTracks(type: String): List<TrackInfo> {
+        val count = mpv.getPropertyInt("track-list/count") ?: 0
+        return (0 until count).mapNotNull { i ->
+            if (mpv.getPropertyString("track-list/$i/type") != type) return@mapNotNull null
+            val id = mpv.getPropertyInt("track-list/$i/id") ?: return@mapNotNull null
+            val label = mpv.getPropertyString("track-list/$i/title")
+                ?: mpv.getPropertyString("track-list/$i/lang")?.let { "Faixa $it" }
+                ?: "Faixa $id"
+            TrackInfo(id, label)
         }
     }
 
     // ----------------------------------------------------------- controls
 
     fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (_state.value.isPlaying) pause() else resume()
     }
 
-    fun pause() = runCatching { if (player.isPlaying) player.pause() }.let { }
+    fun pause() = runCatching {
+        mpv.setPropertyBoolean("pause", true)
+        _state.update { if (it.canShowVideo) it.copy(phase = PlaybackPhase.PAUSED) else it }
+    }.let { }
 
-    fun resume() = runCatching { if (!player.isPlaying) player.play() }.let { }
+    fun resume() = runCatching {
+        mpv.setPropertyBoolean("pause", false)
+        _state.update { if (it.canShowVideo) it.copy(phase = PlaybackPhase.PLAYING) else it }
+    }.let { }
 
     fun seekTo(positionMs: Long) {
         val duration = _state.value.durationMs
         if (duration <= 0) return
-        player.time = positionMs.coerceIn(0, duration)
-        _state.update { it.copy(positionMs = positionMs) }
+        val clamped = positionMs.coerceIn(0, duration)
+        mpv.setPropertyDouble("time-pos", clamped / 1000.0)
+        _state.update { it.copy(positionMs = clamped) }
     }
 
     fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
@@ -254,24 +286,37 @@ class PlaybackController(
     /** Walks [SCALE_CYCLE], wrapping — the "esticar"/aspect-ratio button. */
     fun cycleScale() {
         val next = SCALE_CYCLE.getOrElse(SCALE_CYCLE.indexOf(_state.value.scaleType) + 1) { SCALE_CYCLE[0] }
-        player.videoScale = next
+        applyScale(next)
         _state.update { it.copy(scaleType = next) }
     }
 
+    private fun applyScale(type: MpvScaleType) {
+        mpv.setPropertyString(
+            "video-aspect-override",
+            when (type) {
+                MpvScaleType.RATIO_16_9 -> "16:9"
+                MpvScaleType.RATIO_4_3 -> "4:3"
+                else -> "no"
+            },
+        )
+        mpv.setPropertyDouble("panscan", if (type == MpvScaleType.FILL) 1.0 else 0.0)
+        mpv.setPropertyBoolean("video-unscaled", type == MpvScaleType.ORIGINAL)
+    }
+
     fun selectAudioTrack(id: Int) {
-        player.audioTrack = id
+        mpv.setPropertyInt("aid", id)
         _state.update { it.copy(currentAudioId = id) }
     }
 
     fun selectSubtitleTrack(id: Int) {
-        player.spuTrack = id
+        if (id < 0) mpv.setPropertyString("sid", "no") else mpv.setPropertyInt("sid", id)
         _state.update { it.copy(currentSubtitleId = id) }
     }
 
     /**
      * Adds an addon's subtitle file.
      *
-     * The URL goes to the engine untouched: libVLC reads SRT and ASS directly,
+     * The URL goes to the engine untouched: mpv reads SRT and ASS directly,
      * so there is none of the download-decode-convert-to-WebVTT dance the
      * browser build needs.
      */
@@ -280,17 +325,15 @@ class PlaybackController(
         _state.update { it.copy(externalSubtitle = option) }
 
         if (option == null) {
-            player.spuTrack = -1
+            mpv.setPropertyString("sid", "no")
             return
         }
         if (_state.value.canShowVideo) attachSubtitle(option)
     }
 
     private fun attachSubtitle(option: SubtitleOption) {
-        runCatching {
-            player.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(option.url), true)
-        }
-        _state.update { it.copy(subtitleTracks = player.readTracks(audio = false)) }
+        runCatching { mpv.command(arrayOf("sub-add", option.url, "select")) }
+        _state.update { it.copy(subtitleTracks = readTracks("sub")) }
     }
 
     /** Where the scrobbler reads from: 0–100 of the running title. */
@@ -301,7 +344,7 @@ class PlaybackController(
         ticker?.cancel()
         watchdog = null
         ticker = null
-        runCatching { player.stop() }
+        runCatching { mpv.command(arrayOf("stop")) }
     }
 
     fun stop() {
@@ -309,12 +352,15 @@ class PlaybackController(
         _state.value = PlaybackState()
     }
 
+    /**
+     * Releases this playback's hold on the shared engine. mpv itself is not
+     * torn down here — [MpvEngine] owns it for the process's lifetime, the
+     * same way the libVLC engine this replaced was never rebuilt between
+     * episodes.
+     */
     fun release() {
         stopInternal()
-        runCatching {
-            player.setEventListener(null)
-            player.release()
-        }
+        mpv.removeObserver(this)
     }
 
     private companion object {
@@ -325,13 +371,9 @@ class PlaybackController(
          */
         const val ATTEMPT_TIMEOUT_MS = 12_000L
         const val MAX_PASSES = 2
-        const val NETWORK_CACHING_MS = 1500
         const val TICK_MS = 500L
-    }
-}
 
-/** libVLC hands tracks back as a nullable array of descriptions. */
-private fun MediaPlayer.readTracks(audio: Boolean): List<TrackInfo> {
-    val descriptions = if (audio) audioTracks else spuTracks
-    return descriptions.orEmpty().map { TrackInfo(it.id, it.name ?: "Faixa ${it.id}") }
+        /** How close to the known duration counts as "really" ended. */
+        const val END_TOLERANCE_MS = 4_000L
+    }
 }

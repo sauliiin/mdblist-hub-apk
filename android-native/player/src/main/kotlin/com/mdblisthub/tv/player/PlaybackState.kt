@@ -1,32 +1,32 @@
 package com.mdblisthub.tv.player
 
 import com.mdblisthub.tv.core.model.SubtitleOption
-import org.videolan.libvlc.MediaPlayer
 
 /**
  * The cycle the "esticar" button walks, in the order it walks it.
  *
- * `SURFACE_BEST_FIT` is libVLC's own default — letterboxed, nothing cropped —
- * so it opens every playback and is the state to fall back to. `SURFACE_FILL`
- * is the one people actually reach for on a phone showing a widescreen
- * release: it crops top and bottom rather than pillarboxing to nothing.
+ * `FIT` is mpv's own default — letterboxed, nothing cropped — so it opens
+ * every playback and is the state to fall back to. `FILL` is the one people
+ * actually reach for on a phone showing a widescreen release: it crops top
+ * and bottom rather than pillarboxing to nothing.
  */
+enum class MpvScaleType { FIT, FILL, RATIO_16_9, RATIO_4_3, ORIGINAL }
+
 val SCALE_CYCLE = listOf(
-    MediaPlayer.ScaleType.SURFACE_BEST_FIT,
-    MediaPlayer.ScaleType.SURFACE_FILL,
-    MediaPlayer.ScaleType.SURFACE_16_9,
-    MediaPlayer.ScaleType.SURFACE_4_3,
-    MediaPlayer.ScaleType.SURFACE_ORIGINAL,
+    MpvScaleType.FIT,
+    MpvScaleType.FILL,
+    MpvScaleType.RATIO_16_9,
+    MpvScaleType.RATIO_4_3,
+    MpvScaleType.ORIGINAL,
 )
 
 /** A label worth showing for a couple of seconds after the button is pressed. */
-fun MediaPlayer.ScaleType.label(): String = when (this) {
-    MediaPlayer.ScaleType.SURFACE_BEST_FIT -> "Ajustar à tela"
-    MediaPlayer.ScaleType.SURFACE_FILL -> "Preencher"
-    MediaPlayer.ScaleType.SURFACE_16_9 -> "16:9"
-    MediaPlayer.ScaleType.SURFACE_4_3 -> "4:3"
-    MediaPlayer.ScaleType.SURFACE_ORIGINAL -> "Tamanho original"
-    else -> name
+fun MpvScaleType.label(): String = when (this) {
+    MpvScaleType.FIT -> "Ajustar à tela"
+    MpvScaleType.FILL -> "Preencher"
+    MpvScaleType.RATIO_16_9 -> "16:9"
+    MpvScaleType.RATIO_4_3 -> "4:3"
+    MpvScaleType.ORIGINAL -> "Tamanho original"
 }
 
 /** Where playback is, as one value the UI can render without branching twice. */
@@ -49,7 +49,7 @@ enum class PlaybackPhase {
     FAILED,
 }
 
-/** One selectable audio or subtitle track, as libVLC reports it. */
+/** One selectable audio or subtitle track, as mpv's `track-list` reports it. */
 data class TrackInfo(val id: Int, val label: String)
 
 data class PlaybackState(
@@ -64,7 +64,7 @@ data class PlaybackState(
     val currentAudioId: Int = -1,
     val currentSubtitleId: Int = -1,
     val externalSubtitle: SubtitleOption? = null,
-    val scaleType: MediaPlayer.ScaleType = MediaPlayer.ScaleType.SURFACE_BEST_FIT,
+    val scaleType: MpvScaleType = MpvScaleType.FIT,
     val error: String? = null,
 ) {
     val isPlaying: Boolean get() = phase == PlaybackPhase.PLAYING

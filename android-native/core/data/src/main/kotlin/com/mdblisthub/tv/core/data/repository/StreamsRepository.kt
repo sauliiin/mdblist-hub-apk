@@ -56,7 +56,7 @@ class StreamsRepository(
     /**
      * The same fan-out for subtitles.
      *
-     * libVLC reads SRT and ASS straight off a URL, so unlike the browser build
+     * mpv reads SRT and ASS straight off a URL, so unlike the browser build
      * there is no download-and-convert step — the address goes to the engine
      * as it arrived.
      */

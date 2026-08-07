@@ -9,7 +9,7 @@ import com.mdblisthub.tv.core.data.repository.ListsRepository
 import com.mdblisthub.tv.core.data.repository.MediaRepository
 import com.mdblisthub.tv.core.data.repository.PlaybackRepository
 import com.mdblisthub.tv.core.data.repository.StreamsRepository
-import com.mdblisthub.tv.core.data.repository.StremioAccountRepository
+import com.mdblisthub.tv.core.data.repository.WikipediaRepository
 import com.mdblisthub.tv.core.data.work.ImageWarmer
 import com.mdblisthub.tv.core.data.work.MetadataScheduler
 import com.mdblisthub.tv.core.database.HubDatabase
@@ -44,9 +44,9 @@ class DataGraph(context: Context) {
     val addons = AddonsRepository(network.stremio, database)
     val streams = StreamsRepository(network.stremio, addons)
     val library = LibraryRepository(network.mdblist, session, database)
-    val playback = PlaybackRepository(network.mdblist, session, database)
-    val stremioAccount = StremioAccountRepository(network.stremioAccount, syncStore, addons)
+    val playback = PlaybackRepository(network.mdblist, session, database, media)
     val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, session, addons, scope)
+    val wikipedia = WikipediaRepository(network.wikipedia)
 
     val scheduler = MetadataScheduler(appContext)
     val prefetcher = MetadataPrefetcher(media, scope)

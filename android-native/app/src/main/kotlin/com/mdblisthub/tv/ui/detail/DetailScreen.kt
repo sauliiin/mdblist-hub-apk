@@ -7,8 +7,15 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,15 +39,24 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -50,13 +67,16 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
+import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.MediaRow
 import com.mdblisthub.tv.core.ui.component.RatingBadges
@@ -64,6 +84,7 @@ import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -85,11 +106,62 @@ fun DetailScreen(
     val library by viewModel.library.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
+    val castBio by viewModel.castBio.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    var buttonRowHadFocus by remember { mutableStateOf(false) }
+    var buttonRowHasFocus by remember { mutableStateOf(false) }
 
-    BackHandler { onBack() }
+    LaunchedEffect(buttonRowHasFocus) {
+        if (buttonRowHasFocus) {
+            if (!buttonRowHadFocus) {
+                // Entering the row from outside: snap the list immediately
+                // to the top so logo, synopsis and ratings are visible
+                // while the user navigates between buttons.
+                listState.scrollToItem(0)
+                buttonRowHadFocus = true
+            }
+        } else {
+            // Momentary focus loss during sibling transitions is common;
+            // only reset the 'had focus' flag if it stays lost.
+            delay(100)
+            buttonRowHadFocus = false
+        }
+    }
+
+    /*
+     * The micro-scroll fix.
+     *
+     * Every focusable inside a LazyColumn asks the list to bring it into view
+     * the moment it gains focus. While the D-pad walks Assistir → Trailer →
+     * Watchlist, that request fires per button — and because the head item is
+     * taller than the viewport, "make the button fully visible" means nudging
+     * the list down a few pixels, which our scroll-to-top above then undoes.
+     * That tug-of-war is the visible jitter.
+     *
+     * Zeroing the scroll distance while the row holds focus removes the
+     * system's half of the fight entirely: the one-shot scrollToItem(0) pins
+     * the header, and focus slides between buttons without the list moving.
+     * The moment focus leaves the row (down to seasons/cast), the default
+     * minimal-scroll behaviour is back and vertical navigation works as ever.
+     */
+    val pinWhileOnButtons = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                if (buttonRowHasFocus) return 0f
+                return when {
+                    offset >= 0f && offset + size <= containerSize -> 0f
+                    offset < 0f -> offset
+                    else -> offset + size - containerSize
+                }
+            }
+        }
+    }
+
+    BackHandler {
+        if (castBio.member != null) viewModel.closeCast() else onBack()
+    }
 
     val current = detail
     if (current == null) {
@@ -100,6 +172,7 @@ fun DetailScreen(
     Box(Modifier.fillMaxSize()) {
         FanartBackdrop(url = current.backdropUrl, scrim = 0.86f)
 
+        CompositionLocalProvider(LocalBringIntoViewSpec provides pinWhileOnButtons) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -174,9 +247,12 @@ fun DetailScreen(
                             // above it need to be visible again, so focus
                             // landing here snaps the list back to the top.
                             .onFocusChanged { state ->
-                                if (state.hasFocus) {
-                                    coroutineScope.launch { listState.animateScrollToItem(0) }
-                                }
+                                // Only track whether the row has focus; the
+                                // scroll action is triggered once from the
+                                // LaunchedEffect above when focus enters the row
+                                // from outside. This prevents repeated jumps as
+                                // focus moves between buttons.
+                                buttonRowHasFocus = state.hasFocus
                             },
                     ) {
                         HubButton(
@@ -270,7 +346,7 @@ fun DetailScreen(
 
             if (current.cast.isNotEmpty()) {
                 item(key = "cast") {
-                    CastRow(current)
+                    CastRow(current, onCastClick = viewModel::openCast)
                 }
             }
 
@@ -289,6 +365,15 @@ fun DetailScreen(
                     )
                 }
             }
+        }
+        }
+
+        castBio.member?.let { member ->
+            CastBioOverlay(
+                member = member,
+                state = castBio,
+                onDismiss = viewModel::closeCast,
+            )
         }
     }
 }
@@ -346,7 +431,7 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
+private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastClick: (CastMember) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = "Elenco",
@@ -357,18 +442,30 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
+            modifier = Modifier.focusRestorer(),
         ) {
             items(current.cast, key = { it.id }) { member ->
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.width(112.dp),
+                    modifier = Modifier
+                        .width(112.dp)
+                        .clickable(interactionSource = interaction, indication = null) { onCastClick(member) }
+                        .padding(6.dp),
                 ) {
                     Box(
                         Modifier
                             .size(92.dp)
                             .clip(CircleShape)
-                            .background(HubColors.Surface),
+                            .background(HubColors.Surface)
+                            .border(
+                                width = if (focused) 2.5.dp else 0.dp,
+                                color = if (focused) HubColors.Accent else HubColors.Border,
+                                shape = CircleShape,
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (member.profileUrl != null) {
@@ -383,7 +480,7 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
                     Text(
                         text = member.name,
                         style = MaterialTheme.typography.labelLarge,
-                        color = HubColors.Text,
+                        color = if (focused) HubColors.Text else HubColors.TextDim,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -401,6 +498,110 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The cast popup — a biography borrowed from Wikipedia, since a TMDB credit
+ * carries nothing past a name, a character and a photo.
+ *
+ * Keyed off `member` rather than reading `state.member` directly: the state
+ * clears to null the instant [onDismiss] fires, and this composable would
+ * otherwise have nothing left to render for the one frame before the `if`
+ * guard around its call site catches up.
+ */
+@Composable
+private fun CastBioOverlay(
+    member: CastMember,
+    state: CastBioState,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    // Opening the popup does not move focus on its own — it was left sitting
+    // on the (now-hidden) cast card behind the scrim, so OK just reopened the
+    // same popup instead of ever reaching "Fechar". Same fix as the player's
+    // subtitle/audio pickers.
+    val closeButtonFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { closeButtonFocus.requestFocus() }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(HubColors.Background.copy(alpha = 0.75f))
+            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .widthIn(max = 560.dp)
+                .heightIn(max = 520.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(HubColors.Surface)
+                .border(1.dp, HubColors.Border, RoundedCornerShape(16.dp))
+                // Consumes taps inside the card so they do not also reach the
+                // scrim's dismiss handler behind it.
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(
+                    Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(HubColors.SurfaceStrong),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val photoUrl = member.profileUrl ?: state.summary?.thumbnailUrl
+                    if (photoUrl != null) {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = member.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(member.name, style = MaterialTheme.typography.headlineMedium, color = HubColors.Text)
+                    member.character?.let {
+                        Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
+                    }
+                }
+            }
+
+            when {
+                state.loading -> Box(Modifier.fillMaxWidth().padding(vertical = 24.dp)) {
+                    HubSpinner(size = 32.dp, modifier = Modifier.align(Alignment.Center))
+                }
+                state.error != null -> Text(
+                    text = state.error,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.TextDim,
+                )
+                state.summary != null -> Text(
+                    text = state.summary.extract,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.TextDim,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                state.summary?.pageUrl?.let { url ->
+                    HubButton(text = "Ver na Wikipedia", onClick = { openUrl(context, url) })
+                }
+                HubButton(text = "Fechar", onClick = onDismiss, modifier = Modifier.focusRequester(closeButtonFocus))
+            }
+        }
+    }
+}
+
+private fun openUrl(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
+        // No browser to hand it to — nothing left to do.
     }
 }
 
@@ -422,11 +623,20 @@ private fun ReviewsRow(reviews: List<Review>) {
             modifier = Modifier.focusRestorer(),
         ) {
             items(reviews, key = { "${it.provider}-${it.author}-${it.updatedAt}" }) { review ->
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+
                 Column(
                     modifier = Modifier
                         .width(360.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(HubColors.Surface.copy(alpha = 0.7f))
+                        .background(if (focused) HubColors.SurfaceStrong else HubColors.Surface.copy(alpha = 0.7f))
+                        .border(
+                            width = if (focused) 2.5.dp else 0.dp,
+                            color = if (focused) HubColors.Accent else HubColors.Border,
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        .focusable(interactionSource = interaction)
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -482,11 +692,11 @@ private fun ReviewProvider.color(): Color = when (this) {
  * Opens the trailer in the YouTube app, or a browser if there is no YouTube
  * app to hand it to.
  *
- * The player embedded in this app cannot do it: libVLC plays media files, not
+ * The player embedded in this app cannot do it: mpv plays media files, not
  * YouTube's streaming protocol, and this build carries none of the resolver
- * scripts (`youtube.lua`) that would let it try. Handing off to an app built
- * for exactly this is the native equivalent of the `<iframe>` the web build
- * uses — both delegate instead of reimplementing a video platform.
+ * scripts (`ytdl_hook.lua`) that would let it try. Handing off to an app
+ * built for exactly this is the native equivalent of the `<iframe>` the web
+ * build uses — both delegate instead of reimplementing a video platform.
  */
 private fun openTrailer(context: Context, youtubeKey: String) {
     val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$youtubeKey"))

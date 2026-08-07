@@ -1,16 +1,11 @@
 package com.mdblisthub.tv.core.data.repository
 
-import com.mdblisthub.tv.core.data.mapper.ref
 import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.data.mapper.toEntity
-import com.mdblisthub.tv.core.data.mapper.toEntityOrNull
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.database.entity.AddonEntity
 import com.mdblisthub.tv.core.model.Addon
-import com.mdblisthub.tv.core.model.ImportReport
-import com.mdblisthub.tv.core.model.SkippedAddon
 import com.mdblisthub.tv.core.network.StremioApi
-import com.mdblisthub.tv.core.network.dto.StremioCollectionEntryDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -63,54 +58,6 @@ class AddonsRepository(
     }
 
     suspend fun remove(base: String) = dao.delete(base)
-
-    /**
-     * Merges a Stremio account's collection in, and reports what landed.
-     *
-     * The collection already carries each manifest, so nothing is re-fetched
-     * — which also means an addon whose host is momentarily down still
-     * imports. Merging rather than replacing keeps addons added by hand on
-     * this device.
-     */
-    suspend fun importCollection(entries: List<StremioCollectionEntryDto>): ImportReport {
-        val now = System.currentTimeMillis()
-        val imported = mutableListOf<AddonEntity>()
-        val skipped = mutableListOf<SkippedAddon>()
-
-        for (entry in entries) {
-            val url = entry.transportUrl
-            val name = entry.ref().name
-
-            if (url.isNullOrBlank()) {
-                skipped += SkippedAddon(name, "", "a conta não guardou a URL deste addon")
-                continue
-            }
-            if (entry.manifest == null) {
-                skipped += SkippedAddon(name, url, "o manifest veio sem id")
-                continue
-            }
-
-            val entity = entry.toEntityOrNull(now)
-            if (entity == null) {
-                skipped += SkippedAddon(name, url, "URL ou manifest que não dá para interpretar")
-            } else {
-                imported += entity
-            }
-        }
-
-        if (imported.isNotEmpty()) {
-            val bases = imported.map { it.base }.toSet()
-            val existing = dao.addons().filterNot { it.base in bases }
-            dao.replaceAll(existing + imported)
-        }
-
-        return ImportReport(
-            received = entries.size,
-            imported = imported.map { it.name },
-            skipped = skipped,
-            entries = entries.map { it.ref() },
-        )
-    }
 
     /**
      * Folds already-built addons in, answering how many were new to this

@@ -41,9 +41,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.core.data.DataGraph
-import com.mdblisthub.tv.core.data.StremioSession
 import com.mdblisthub.tv.core.model.Addon
-import com.mdblisthub.tv.core.model.ImportReport
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
@@ -108,15 +106,6 @@ data class FirebaseSyncUi(
     val lastDelta: Int? = null,
 )
 
-data class StremioUi(
-    val session: StremioSession? = null,
-    val email: String = "",
-    val password: String = "",
-    val busy: Boolean = false,
-    val error: String? = null,
-    val report: ImportReport? = null,
-)
-
 class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
 
     val addons: StateFlow<List<Addon>> = graph.addons.observeAddons()
@@ -128,20 +117,12 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
     private val _firebase = MutableStateFlow(FirebaseSyncUi())
     val firebase: StateFlow<FirebaseSyncUi> = _firebase.asStateFlow()
 
-    private val _stremio = MutableStateFlow(StremioUi())
-    val stremio: StateFlow<StremioUi> = _stremio.asStateFlow()
-
     init {
         viewModelScope.launch {
             combine(graph.firebaseSync.enabled, graph.firebaseSync.busy, graph.firebaseSync.error) {
                 enabled, busy, error -> Triple(enabled, busy, error)
             }.collect { (enabled, busy, error) ->
                 _firebase.update { it.copy(enabled = enabled, busy = busy, error = error) }
-            }
-        }
-        viewModelScope.launch {
-            graph.stremioAccount.session.collect { session ->
-                _stremio.update { it.copy(session = session) }
             }
         }
     }
@@ -195,46 +176,6 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
         _firebase.update { it.copy(lastDelta = null) }
         viewModelScope.launch { graph.firebaseSync.push() }
     }
-
-    // ------------------------------------------------------- stremio account
-
-    fun onEmailChange(value: String) = _stremio.update { it.copy(email = value, error = null) }
-    fun onPasswordChange(value: String) = _stremio.update { it.copy(password = value, error = null) }
-
-    fun stremioSignIn() {
-        val email = _stremio.value.email.trim()
-        val password = _stremio.value.password
-        if (email.isEmpty() || password.isEmpty() || _stremio.value.busy) return
-
-        _stremio.update { it.copy(busy = true, error = null, report = null) }
-        viewModelScope.launch {
-            graph.stremioAccount.login(email, password).fold(
-                onSuccess = { report ->
-                    // Nothing here needs the password again, so it does not linger.
-                    _stremio.update { it.copy(busy = false, password = "", report = report) }
-                },
-                onFailure = { e -> _stremio.update { it.copy(busy = false, error = e.message) } },
-            )
-        }
-    }
-
-    fun stremioSync() {
-        if (_stremio.value.busy) return
-        _stremio.update { it.copy(busy = true, error = null, report = null) }
-        viewModelScope.launch {
-            graph.stremioAccount.sync().fold(
-                onSuccess = { report -> _stremio.update { it.copy(busy = false, report = report) } },
-                onFailure = { e -> _stremio.update { it.copy(busy = false, error = e.message) } },
-            )
-        }
-    }
-
-    fun stremioSignOut() {
-        viewModelScope.launch {
-            graph.stremioAccount.logout()
-            _stremio.update { it.copy(report = null, error = null) }
-        }
-    }
 }
 
 // -------------------------------------------------------------------- UI
@@ -245,7 +186,6 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
     val addons by viewModel.addons.collectAsStateWithLifecycle()
     val install by viewModel.install.collectAsStateWithLifecycle()
     val firebase by viewModel.firebase.collectAsStateWithLifecycle()
-    val stremio by viewModel.stremio.collectAsStateWithLifecycle()
 
     BackHandler { onBack() }
 
@@ -277,17 +217,6 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
                 onToggle = viewModel::toggleFirebaseSync,
                 onPull = viewModel::pullFirebase,
                 onPush = viewModel::pushFirebase,
-            )
-        }
-
-        item(key = "stremio") {
-            StremioAccountCard(
-                state = stremio,
-                onEmailChange = viewModel::onEmailChange,
-                onPasswordChange = viewModel::onPasswordChange,
-                onSignIn = viewModel::stremioSignIn,
-                onSync = viewModel::stremioSync,
-                onSignOut = viewModel::stremioSignOut,
             )
         }
 
@@ -370,89 +299,6 @@ private fun FirebaseSyncCard(
                 else "Nada mudou — este aparelho já estava em dia.",
                 isError = false,
             )
-        }
-    }
-}
-
-// ------------------------------------------------------------- stremio card
-
-@Composable
-private fun StremioAccountCard(
-    state: StremioUi,
-    onEmailChange: (String) -> Unit,
-    onPasswordChange: (String) -> Unit,
-    onSignIn: () -> Unit,
-    onSync: () -> Unit,
-    onSignOut: () -> Unit,
-) {
-    // Stacked, the same as the Firebase card above — a side-by-side layout
-    // here is what deformed the sign-in row on a phone width before: two text
-    // fields and a button sharing one line, each demanding a fixed size the
-    // screen did not have to give.
-    SyncCard(accent = HubColors.Accent) {
-        val session = state.session
-        if (session != null) {
-            Text("Conta Stremio conectada", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
-            Text(session.email, style = MaterialTheme.typography.bodyMedium, color = HubColors.TextDim)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HubButton(
-                    text = if (state.busy) "Sincronizando…" else "Sincronizar agora",
-                    enabled = !state.busy,
-                    onClick = onSync,
-                )
-                HubButton(text = "Desconectar", onClick = onSignOut)
-            }
-        } else {
-            Text("Trazer os addons da sua conta Stremio", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
-            Text(
-                text = "A coleção inteira vem pronta — já com as URLs configuradas, chave de " +
-                    "debrid incluída. A senha vai direto para api.strem.io e não fica salva: o " +
-                    "que guardamos é a chave de sessão que ela devolve.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = HubColors.TextDim,
-                modifier = Modifier.widthIn(max = 820.dp).fillMaxWidth(),
-            )
-
-            HubTextField(
-                value = state.email,
-                onValueChange = onEmailChange,
-                placeholder = "e-mail do Stremio",
-                keyboardType = KeyboardType.Email,
-                modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
-            )
-            HubTextField(
-                value = state.password,
-                onValueChange = onPasswordChange,
-                placeholder = "senha",
-                keyboardType = KeyboardType.Password,
-                obscure = true,
-                imeAction = ImeAction.Done,
-                onImeAction = onSignIn,
-                modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
-            )
-            HubButton(
-                text = if (state.busy) "Entrando…" else "Entrar",
-                primary = true,
-                enabled = state.email.isNotBlank() && state.password.isNotBlank() && !state.busy,
-                onClick = onSignIn,
-            )
-        }
-
-        state.error?.let { InlineMessage(it, isError = true) }
-        state.report?.let { report ->
-            InlineMessage(
-                "${report.imported.size} de ${report.received} addon(s) da sua conta importado(s).",
-                isError = false,
-            )
-            if (report.skipped.isNotEmpty()) {
-                Text(
-                    text = "Não deu para importar ${report.skipped.size}: " +
-                        report.skipped.joinToString("; ") { "${it.name} — ${it.reason}" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = HubColors.TextFaint,
-                    modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth(),
-                )
-            }
         }
     }
 }

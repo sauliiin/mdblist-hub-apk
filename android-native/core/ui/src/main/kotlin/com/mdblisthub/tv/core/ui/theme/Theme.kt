@@ -50,8 +50,8 @@ object HubDimens {
     val ScreenPaddingVertical = 27.dp
     val RowSpacing = 28.dp
     val CardSpacing = 14.dp
-    val PosterWidth = 148.dp
-    val PosterHeight = 222.dp
+    val PosterWidth = 88.8.dp
+    val PosterHeight = 133.2.dp
 }
 
 @Composable

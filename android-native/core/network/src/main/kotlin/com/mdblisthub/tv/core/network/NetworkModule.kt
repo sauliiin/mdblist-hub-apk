@@ -37,11 +37,11 @@ class NetworkModule(context: Context) {
      */
     val stremio: StremioApi = retrofit(ApiConfig.MDBLIST_BASE, addonClient).create()
 
-    val stremioAccount: StremioAccountApi =
-        retrofit(ApiConfig.STREMIO_ACCOUNT_BASE, metadataClient).create()
-
     /** Also `@Url`-driven; the base only has to be a valid URL. */
     val sync: SyncApi = retrofit(ApiConfig.FIREBASE_BASE, metadataClient).create()
+
+    /** `@Url`-driven too — a cast member's bio can come from either language edition. */
+    val wikipedia: WikipediaApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()
 
     private fun retrofit(base: String, client: OkHttpClient): Retrofit =
         Retrofit.Builder()

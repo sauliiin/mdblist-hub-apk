@@ -6,9 +6,9 @@ import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
+import com.mdblisthub.tv.player.MpvEngine
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
-import com.mdblisthub.tv.player.VlcEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +38,7 @@ data class PlayerUiState(
  */
 class PlayerViewModel(
     private val graph: DataGraph,
-    engine: VlcEngine,
+    engine: MpvEngine,
     private val type: MediaType,
     private val tmdbId: Int,
     private val season: Int?,

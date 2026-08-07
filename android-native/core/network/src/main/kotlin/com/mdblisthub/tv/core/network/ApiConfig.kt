@@ -11,7 +11,6 @@ object ApiConfig {
     const val MDBLIST_BASE = "https://api.mdblist.com/"
     const val TMDB_BASE = "https://api.themoviedb.org/3/"
     const val OMDB_BASE = "https://www.omdbapi.com/"
-    const val STREMIO_ACCOUNT_BASE = "https://api.strem.io/api/"
 
     /**
      * Realtime Database over its REST interface. Addons are keyed by the

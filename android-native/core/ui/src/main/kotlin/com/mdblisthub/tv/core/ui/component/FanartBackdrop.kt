@@ -27,7 +27,11 @@ import com.mdblisthub.tv.core.ui.theme.HubColors
 fun FanartBackdrop(
     url: String?,
     modifier: Modifier = Modifier,
-    scrim: Float = 0.82f,
+    // Callers that need heavy contrast for a modal veil (resolving/failure
+    // screens, the detail page's head) pass their own, higher scrim; this
+    // default is what the home screen gets, and it was dark enough that the
+    // artwork barely read as a photo — lowered so it actually shows.
+    scrim: Float = 0.3f,
 ) {
     Box(modifier.fillMaxSize().background(HubColors.Background)) {
         Crossfade(

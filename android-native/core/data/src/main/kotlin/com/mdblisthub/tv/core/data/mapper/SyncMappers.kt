@@ -1,9 +1,7 @@
 package com.mdblisthub.tv.core.data.mapper
 
 import com.mdblisthub.tv.core.database.entity.AddonEntity
-import com.mdblisthub.tv.core.model.AddonRef
 import com.mdblisthub.tv.core.network.HttpClients
-import com.mdblisthub.tv.core.network.dto.StremioCollectionEntryDto
 import com.mdblisthub.tv.core.network.dto.StremioManifestDto
 import com.mdblisthub.tv.core.network.dto.SyncedAddonDto
 import kotlinx.serialization.json.JsonObject
@@ -27,9 +25,8 @@ private object Iso8601 {
 /**
  * Turning a manifest that arrived as a raw [JsonObject] into a row.
  *
- * Two sync sources hand manifests over this way rather than through Retrofit's
- * typed deserialiser: Firebase (this app's own past writes) and the Stremio
- * account API (a service this app does not control). Decoding lazily here,
+ * Firebase hands manifests over this way — this app's own past writes —
+ * rather than through Retrofit's typed deserialiser. Decoding lazily here,
  * instead of widening every DTO to carry a `JsonObject` field, keeps the typed
  * path — installing by URL — as the one Retrofit validates directly.
  */
@@ -69,22 +66,4 @@ fun AddonEntity.toSyncedDto() = SyncedAddonDto(
         HttpClients.json.parseToJsonElement(manifestJson) as? JsonObject
     }.getOrNull(),
     addedAt = Iso8601.format(addedAt),
-)
-
-/**
- * One `addonCollectionGet` entry — Stremio's own shape, `{transportUrl,
- * manifest}`. Unlike a Firebase pull or a direct install, the URL still needs
- * normalising: Stremio does not guarantee it is trimmed the way this app
- * expects.
- */
-fun StremioCollectionEntryDto.toEntityOrNull(now: Long): AddonEntity? {
-    val url = transportUrl?.takeIf { it.isNotBlank() } ?: return null
-    val base = runCatching { com.mdblisthub.tv.core.model.Addon.normaliseUrl(url) }.getOrNull() ?: return null
-    return manifest?.toAddonEntity(base, now)
-}
-
-fun StremioCollectionEntryDto.ref(): AddonRef = AddonRef(
-    name = manifest?.get("name")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-        ?: transportUrl ?: "(sem nome)",
-    url = transportUrl ?: "(sem URL)",
 )

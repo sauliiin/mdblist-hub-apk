@@ -3,10 +3,13 @@ package com.mdblisthub.tv.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.PersonSummary
+import com.mdblisthub.tv.core.model.WikipediaLookup
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +33,14 @@ data class LibraryState(
         LibraryBucket.WATCHED -> watched
     }
 }
+
+/** What the cast popup shows — `member` doubles as "is it open at all". */
+data class CastBioState(
+    val member: CastMember? = null,
+    val loading: Boolean = false,
+    val summary: PersonSummary? = null,
+    val error: String? = null,
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailViewModel(
@@ -68,6 +79,9 @@ class DetailViewModel(
     private val _libraryError = MutableStateFlow<String?>(null)
     val libraryError: StateFlow<String?> = _libraryError.asStateFlow()
 
+    private val _castBio = MutableStateFlow(CastBioState())
+    val castBio: StateFlow<CastBioState> = _castBio.asStateFlow()
+
     init {
         viewModelScope.launch {
             // Usually a no-op: the card's focus already warmed this before the
@@ -104,5 +118,38 @@ class DetailViewModel(
                 }
             _pending.update { it - bucket }
         }
+    }
+
+    /**
+     * Opens the popup immediately, in a loading state, then fills it in once
+     * Wikipedia answers — the name is all a cast credit carries, so there is
+     * nothing faster to show first.
+     */
+    fun openCast(member: CastMember) {
+        _castBio.value = CastBioState(member = member, loading = true)
+        viewModelScope.launch {
+            val result = graph.wikipedia.summaryFor(member.name)
+            _castBio.update {
+                // The popup may have been closed, or another member opened,
+                // while this was in flight — a stale answer should not
+                // reopen it or overwrite what is showing now.
+                if (it.member?.id != member.id) return@update it
+                when (result) {
+                    is WikipediaLookup.Found -> it.copy(loading = false, summary = result.summary, error = null)
+                    is WikipediaLookup.NotFound -> it.copy(
+                        loading = false,
+                        summary = null,
+                        // The reason is shown, not just swallowed, so a real
+                        // failure (network, parsing) reads differently from
+                        // an actor who genuinely has no Wikipedia article.
+                        error = "Não encontrei uma biografia para ${member.name}. (${result.reason})",
+                    )
+                }
+            }
+        }
+    }
+
+    fun closeCast() {
+        _castBio.value = CastBioState()
     }
 }

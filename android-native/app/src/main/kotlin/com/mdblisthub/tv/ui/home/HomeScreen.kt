@@ -83,9 +83,13 @@ fun HomeScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(HubDimens.RowSpacing),
+                // Tighter than HubDimens.RowSpacing on purpose — with the
+                // smaller posters, this is what keeps two rows of a list on
+                // screen together instead of one full row plus a sliver of
+                // the next.
+                verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    top = HubDimens.ScreenPaddingVertical,
+                    top = 12.dp,
                     bottom = HubDimens.ScreenPaddingVertical * 2,
                 ),
             ) {
@@ -158,13 +162,13 @@ private fun HeroPanel(item: MediaItem?) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
-            .height(150.dp),
+            .height(76.dp),
         verticalArrangement = Arrangement.Bottom,
     ) {
         if (item == null) {
             Text(
                 text = "mdblist hub",
-                style = MaterialTheme.typography.displayLarge,
+                style = MaterialTheme.typography.headlineLarge,
                 color = HubColors.Text,
             )
             return@Column
@@ -172,12 +176,12 @@ private fun HeroPanel(item: MediaItem?) {
 
         Text(
             text = item.title,
-            style = MaterialTheme.typography.displayLarge,
+            style = MaterialTheme.typography.headlineLarge,
             color = HubColors.Text,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             listOfNotNull(
                 item.year?.toString(),

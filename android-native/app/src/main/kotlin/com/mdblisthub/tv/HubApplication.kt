@@ -14,7 +14,7 @@ import coil3.request.crossfade
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.work.HubWorkerFactory
 import com.mdblisthub.tv.core.data.work.ImageWarmer
-import com.mdblisthub.tv.player.VlcEngine
+import com.mdblisthub.tv.player.MpvEngine
 import okio.Path.Companion.toOkioPath
 
 class HubApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -23,11 +23,12 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
         private set
 
     /**
-     * One libVLC per process. Creating it loads several megabytes of native
-     * library, so it is built on first use and then kept for good — rebuilding
-     * it between episodes is the easiest way to make a set-top box stutter.
+     * One mpv instance per process. Creating it loads several megabytes of
+     * native library, so it is built on first use and then kept for good —
+     * rebuilding it between episodes is the easiest way to make a set-top
+     * box stutter.
      */
-    val vlcEngine: VlcEngine by lazy { VlcEngine(this) }
+    val mpvEngine: MpvEngine by lazy { MpvEngine(this) }
 
     override fun onCreate() {
         super.onCreate()

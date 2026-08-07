@@ -1,6 +1,8 @@
 package com.mdblisthub.tv.core.ui.component
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -38,10 +39,11 @@ import com.mdblisthub.tv.core.ui.theme.HubDimens
 /**
  * One title in a row.
  *
- * Focus is expressed three ways at once — scale, an accent border and a
- * brightening title — because on a television the viewer is metres away and
- * any single cue is easy to lose. Kodi's skins do the same thing for the same
- * reason.
+ * Focus is expressed two ways at once — an accent border and a brightening
+ * title, no scale — because on a television the viewer is metres away and a
+ * single cue is easy to lose. The zoom this used to add on top fought the
+ * grid's own spacing (a scaled-up card overlaps its neighbours) and read as
+ * restless when moving quickly through a row; the border alone is enough.
  */
 @Composable
 fun PosterCard(
@@ -52,10 +54,20 @@ fun PosterCard(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.09f else 1f,
-        animationSpec = tween(durationMillis = 180),
-        label = "poster-scale",
+    val borderWidth by animateDpAsState(
+        targetValue = if (focused) 2.5.dp else 0.dp,
+        animationSpec = posterFocusTween(),
+        label = "poster-border-width",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) HubColors.Accent else HubColors.Border,
+        animationSpec = posterFocusTween(),
+        label = "poster-border-color",
+    )
+    val titleColor by animateColorAsState(
+        targetValue = if (focused) HubColors.Text else HubColors.TextDim,
+        animationSpec = posterFocusTween(),
+        label = "poster-title-color",
     )
 
     androidx.compose.runtime.LaunchedEffect(focused) {
@@ -68,16 +80,11 @@ fun PosterCard(
     ) {
         Box(
             Modifier
-                .scale(scale)
                 .width(HubDimens.PosterWidth)
                 .height(HubDimens.PosterHeight)
                 .clip(RoundedCornerShape(10.dp))
                 .background(HubColors.Surface)
-                .border(
-                    width = if (focused) 2.5.dp else 0.dp,
-                    color = if (focused) HubColors.Accent else HubColors.Border,
-                    shape = RoundedCornerShape(10.dp),
-                )
+                .border(width = borderWidth, color = borderColor, shape = RoundedCornerShape(10.dp))
                 // `clickable` is what makes it focusable *and* what turns the
                 // remote's centre key into a click; adding `focusable` beside
                 // it would register two focus targets for one card.
@@ -113,13 +120,16 @@ fun PosterCard(
         Text(
             text = item.title,
             style = MaterialTheme.typography.labelLarge,
-            color = if (focused) HubColors.Text else HubColors.TextDim,
+            color = titleColor,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.width(HubDimens.PosterWidth),
         )
     }
 }
+
+/** Shared by every focus-driven property on the card, so they move as one. */
+private fun <T> posterFocusTween() = tween<T>(durationMillis = 200, easing = FastOutSlowInEasing)
 
 @Composable
 private fun ScoreBadge(score: Int, modifier: Modifier = Modifier) {
