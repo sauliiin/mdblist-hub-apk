@@ -55,8 +55,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -210,7 +208,7 @@ fun DetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier
                             .horizontalScroll(rememberScrollState())
-                            .height(IntrinsicSize.Min).alpha(if (buttonRowHasFocus) 0f else 1f)
+                            .height(IntrinsicSize.Min)
                             // Coming back up from cast/reviews/episodes to this
                             // row is the moment the poster, rating and overview
                             // above it need to be visible again, so focus
@@ -333,56 +331,6 @@ fun DetailScreen(
                         onItemClick = onOpenTitle,
                     )
                 }
-            }
-        }
-
-        // Fixed overlay button row so focus doesn't scroll the list
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(horizontal = HubDimens.ScreenPaddingHorizontal, vertical = HubDimens.ScreenPaddingVertical * 2)
-                .zIndex(1f)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .height(IntrinsicSize.Min)
-                    .onFocusChanged { state -> buttonRowHasFocus = state.hasFocus },
-            ) {
-                HubButton(
-                    text = if (type == MediaType.SHOW) "Assistir T${season}E1" else "Assistir",
-                    primary = true,
-                    onClick = {
-                        if (type == MediaType.SHOW) onPlay(season, 1) else onPlay(null, null)
-                    },
-                    modifier = Modifier.fillMaxHeight(),
-                )
-                if (current.trailerKey != null) {
-                    HubButton(
-                        text = "Trailer",
-                        onClick = { openTrailer(context, current.trailerKey!!) },
-                        modifier = Modifier.fillMaxHeight(),
-                    )
-                }
-                HubButton(
-                    text = if (library.watchlist) "Na watchlist" else "+ Watchlist",
-                    enabled = LibraryBucket.WATCHLIST !in pending,
-                    onClick = viewModel::toggleWatchlist,
-                    modifier = Modifier.fillMaxHeight(),
-                )
-                HubButton(
-                    text = if (library.collection) "Na coleção" else "+ Coleção",
-                    enabled = LibraryBucket.COLLECTION !in pending,
-                    onClick = viewModel::toggleCollection,
-                    modifier = Modifier.fillMaxHeight(),
-                )
-                HubButton(
-                    text = if (library.watched) "Assistido" else "Marcar assistido",
-                    enabled = LibraryBucket.WATCHED !in pending,
-                    onClick = viewModel::toggleWatched,
-                    modifier = Modifier.fillMaxHeight(),
-                )
             }
         }
 
