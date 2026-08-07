@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +37,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,9 +48,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -58,13 +64,16 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
+import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.MediaRow
 import com.mdblisthub.tv.core.ui.component.RatingBadges
@@ -94,6 +103,7 @@ fun DetailScreen(
     val library by viewModel.library.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
+    val castBio by viewModel.castBio.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -103,20 +113,23 @@ fun DetailScreen(
     LaunchedEffect(buttonRowHasFocus) {
         if (buttonRowHasFocus) {
             if (!buttonRowHadFocus) {
-                // Entering the row from outside: mark that the row has been
-                // focused so sibling transitions don't re-run the entrance
-                // logic immediately.
+                // Entering the row from outside: snap the list immediately
+                // to the top so logo, synopsis and ratings are visible
+                // while the user navigates between buttons.
+                listState.scrollToItem(0)
                 buttonRowHadFocus = true
             }
         } else {
             // Momentary focus loss during sibling transitions is common;
             // only reset the 'had focus' flag if it stays lost.
-            delay(100)
+            kotlinx.coroutines.delay(100)
             buttonRowHadFocus = false
         }
     }
 
-    BackHandler { onBack() }
+    BackHandler {
+        if (castBio.member != null) viewModel.closeCast() else onBack()
+    }
 
     val current = detail
     if (current == null) {
@@ -201,15 +214,12 @@ fun DetailScreen(
                             // above it need to be visible again, so focus
                             // landing here snaps the list back to the top.
                             .onFocusChanged { state ->
+                                // Only track whether the row has focus; the
+                                // scroll action is triggered once from the
+                                // LaunchedEffect below when focus enters the row
+                                // from outside. This prevents repeated jumps as
+                                // focus moves between buttons.
                                 buttonRowHasFocus = state.hasFocus
-                                if (state.hasFocus) {
-                                    // Ensure the list stays at the top while the
-                                    // user navigates between buttons so the logo,
-                                    // synopsis and ratings remain visible.
-                                    if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
-                                        coroutineScope.launch { listState.scrollToItem(0) }
-                                    }
-                                }
                             },
                     ) {
                         HubButton(
@@ -303,7 +313,7 @@ fun DetailScreen(
 
             if (current.cast.isNotEmpty()) {
                 item(key = "cast") {
-                    CastRow(current)
+                    CastRow(current, onCastClick = viewModel::openCast)
                 }
             }
 
@@ -322,6 +332,14 @@ fun DetailScreen(
                     )
                 }
             }
+        }
+
+        castBio.member?.let { member ->
+            CastBioOverlay(
+                member = member,
+                state = castBio,
+                onDismiss = viewModel::closeCast,
+            )
         }
     }
 }
@@ -379,7 +397,7 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
+private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastClick: (CastMember) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = "Elenco",
@@ -390,18 +408,30 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
+            modifier = Modifier.focusRestorer(),
         ) {
             items(current.cast, key = { it.id }) { member ->
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.width(112.dp),
+                    modifier = Modifier
+                        .width(112.dp)
+                        .clickable(interactionSource = interaction, indication = null) { onCastClick(member) }
+                        .padding(6.dp),
                 ) {
                     Box(
                         Modifier
                             .size(92.dp)
                             .clip(CircleShape)
-                            .background(HubColors.Surface),
+                            .background(HubColors.Surface)
+                            .border(
+                                width = if (focused) 2.5.dp else 0.dp,
+                                color = if (focused) HubColors.Accent else HubColors.Border,
+                                shape = CircleShape,
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (member.profileUrl != null) {
@@ -416,7 +446,7 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail) {
                     Text(
                         text = member.name,
                         style = MaterialTheme.typography.labelLarge,
-                        color = HubColors.Text,
+                        color = if (focused) HubColors.Text else HubColors.TextDim,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
