@@ -7,8 +7,12 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +37,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,6 +95,7 @@ fun DetailScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    var buttonRowHadFocus by remember { mutableStateOf(false) }
 
     BackHandler { onBack() }
 
@@ -173,10 +181,23 @@ fun DetailScreen(
                             // row is the moment the poster, rating and overview
                             // above it need to be visible again, so focus
                             // landing here snaps the list back to the top.
+                            //
+                            // `onFocusChanged` fires on every focus move inside
+                            // the row too — button to button, not just row
+                            // entry — so without the had-focus guard each D-pad
+                            // press re-launched the scroll animation and the
+                            // list visibly bounced instead of sitting still.
                             .onFocusChanged { state ->
-                                if (state.hasFocus) {
-                                    coroutineScope.launch { listState.animateScrollToItem(0) }
+                                if (state.hasFocus && !buttonRowHadFocus) {
+                                    // Only animate if the list is not already
+                                    // scrolled to the top; prevents needless
+                                    // re-running the scroll animation while
+                                    // moving focus between buttons.
+                                    if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                                        coroutineScope.launch { listState.animateScrollToItem(0) }
+                                    }
                                 }
+                                buttonRowHadFocus = state.hasFocus
                             },
                     ) {
                         HubButton(
@@ -422,11 +443,20 @@ private fun ReviewsRow(reviews: List<Review>) {
             modifier = Modifier.focusRestorer(),
         ) {
             items(reviews, key = { "${it.provider}-${it.author}-${it.updatedAt}" }) { review ->
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+
                 Column(
                     modifier = Modifier
                         .width(360.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(HubColors.Surface.copy(alpha = 0.7f))
+                        .background(if (focused) HubColors.SurfaceStrong else HubColors.Surface.copy(alpha = 0.7f))
+                        .border(
+                            width = if (focused) 2.5.dp else 0.dp,
+                            color = if (focused) HubColors.Accent else HubColors.Border,
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        .focusable(interactionSource = interaction)
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -482,11 +512,11 @@ private fun ReviewProvider.color(): Color = when (this) {
  * Opens the trailer in the YouTube app, or a browser if there is no YouTube
  * app to hand it to.
  *
- * The player embedded in this app cannot do it: libVLC plays media files, not
+ * The player embedded in this app cannot do it: mpv plays media files, not
  * YouTube's streaming protocol, and this build carries none of the resolver
- * scripts (`youtube.lua`) that would let it try. Handing off to an app built
- * for exactly this is the native equivalent of the `<iframe>` the web build
- * uses — both delegate instead of reimplementing a video platform.
+ * scripts (`ytdl_hook.lua`) that would let it try. Handing off to an app
+ * built for exactly this is the native equivalent of the `<iframe>` the web
+ * build uses — both delegate instead of reimplementing a video platform.
  */
 private fun openTrailer(context: Context, youtubeKey: String) {
     val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$youtubeKey"))
