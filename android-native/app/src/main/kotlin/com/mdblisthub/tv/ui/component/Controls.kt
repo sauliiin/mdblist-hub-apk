@@ -53,8 +53,8 @@ fun HubButton(
             .clip(RoundedCornerShape(10.dp))
             .background(background)
             .border(
-                width = if (focused) 0.dp else 1.dp,
-                color = HubColors.Border,
+                width = 1.dp,
+                color = if (focused) background else HubColors.Border,
                 shape = RoundedCornerShape(10.dp),
             )
             .clickable(
