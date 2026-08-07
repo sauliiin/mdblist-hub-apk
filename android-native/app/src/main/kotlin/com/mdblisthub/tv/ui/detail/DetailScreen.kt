@@ -62,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -489,6 +490,7 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastCli
                         Text(
                             text = it,
                             style = MaterialTheme.typography.labelSmall,
+                            fontSize = MaterialTheme.typography.labelSmall.fontSize - 2.sp,
                             color = HubColors.TextFaint,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
