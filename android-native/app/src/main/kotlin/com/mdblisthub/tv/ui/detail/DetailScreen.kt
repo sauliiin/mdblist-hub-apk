@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +72,7 @@ import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -96,6 +98,23 @@ fun DetailScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var buttonRowHadFocus by remember { mutableStateOf(false) }
+    var buttonRowHasFocus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(buttonRowHasFocus) {
+        if (buttonRowHasFocus) {
+            if (!buttonRowHadFocus) {
+                // Entering the row from outside: mark that the row has been
+                // focused so sibling transitions don't re-run the entrance
+                // logic immediately.
+                buttonRowHadFocus = true
+            }
+        } else {
+            // Momentary focus loss during sibling transitions is common;
+            // only reset the 'had focus' flag if it stays lost.
+            delay(100)
+            buttonRowHadFocus = false
+        }
+    }
 
     BackHandler { onBack() }
 
@@ -181,23 +200,16 @@ fun DetailScreen(
                             // row is the moment the poster, rating and overview
                             // above it need to be visible again, so focus
                             // landing here snaps the list back to the top.
-                            //
-                            // `onFocusChanged` fires on every focus move inside
-                            // the row too — button to button, not just row
-                            // entry — so without the had-focus guard each D-pad
-                            // press re-launched the scroll animation and the
-                            // list visibly bounced instead of sitting still.
                             .onFocusChanged { state ->
-                                if (state.hasFocus && !buttonRowHadFocus) {
-                                    // Only animate if the list is not already
-                                    // scrolled to the top; prevents needless
-                                    // re-running the scroll animation while
-                                    // moving focus between buttons.
+                                buttonRowHasFocus = state.hasFocus
+                                if (state.hasFocus) {
+                                    // Ensure the list stays at the top while the
+                                    // user navigates between buttons so the logo,
+                                    // synopsis and ratings remain visible.
                                     if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
-                                        coroutineScope.launch { listState.animateScrollToItem(0) }
+                                        coroutineScope.launch { listState.scrollToItem(0) }
                                     }
                                 }
-                                buttonRowHadFocus = state.hasFocus
                             },
                     ) {
                         HubButton(
