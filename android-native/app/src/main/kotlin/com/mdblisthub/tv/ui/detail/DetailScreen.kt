@@ -489,8 +489,9 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastCli
                     member.character?.let {
                         Text(
                             text = it,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = MaterialTheme.typography.labelSmall.fontSize - 2.sp,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = (MaterialTheme.typography.labelSmall.fontSize.value - 2f).sp
+                            ),
                             color = HubColors.TextFaint,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
