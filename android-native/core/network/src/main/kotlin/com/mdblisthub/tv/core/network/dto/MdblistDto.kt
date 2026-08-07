@@ -55,7 +55,15 @@ data class MdbItemDto(
 data class MdbRatingDto(
     val source: String = "",
     val value: Double? = null,
-    val score: Int? = null,
+    /**
+     * `Double`, not `Int`, however integral it looks: mdblist sends
+     * `metacriticuser` as `89.0` on essentially every title, and kotlinx
+     * decoding `89.0` into an `Int` throws — which fails the *whole*
+     * `MdbInfoDto`, not just this field, taking the title's ratings and
+     * reviews with it. That single mismatch is what left most titles with
+     * neither.
+     */
+    val score: Double? = null,
     val votes: Long? = null,
     /** Rotten Tomatoes only: 1 fresh, 0 rotten. Absent means "decide by value". */
     val fresh: Int? = null,

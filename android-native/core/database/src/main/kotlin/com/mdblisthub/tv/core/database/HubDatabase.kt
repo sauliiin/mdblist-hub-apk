@@ -29,7 +29,7 @@ import com.mdblisthub.tv.core.database.entity.ResumeEntity
         ResumeEntity::class,
         LibraryEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

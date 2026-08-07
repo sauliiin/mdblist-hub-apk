@@ -75,6 +75,14 @@ data class MediaDetailEntity(
     val seasons: List<SeasonSummary>,
     val recommendations: List<MediaItem>,
     val reviews: List<Review>,
+    /**
+     * False when a supplementary source (mdblist, OMDb) threw while this row
+     * was built, so the row is missing things it should have had rather than
+     * things that do not exist. Without this the two look identical, and a
+     * single rate-limited call hides a title's ratings and reviews for the
+     * whole `DETAIL_MS` week.
+     */
+    val metadataComplete: Boolean = true,
     val fetchedAt: Long,
 )
 

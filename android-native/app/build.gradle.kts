@@ -16,21 +16,24 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // The mpv engine ships no 32-bit x86 build worth carrying, and no TV
-        // device needs it. Dropping it here keeps the universal APK from
-        // doubling.
-        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64") }
+        // x86 (32-bit) is back on the list deliberately: the emulator this
+        // app is tested on reports exactly that ABI, and without a native
+        // slice it silently ran the armeabi-v7a one through binary
+        // translation — molasses that looked like app slowness. Post-mpv the
+        // native payload is a few hundred KB per ABI, so carrying it is free.
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
 
-    // mpv's native libraries (mpv itself plus the ffmpeg stack it links) are
-    // the bulk of this app. One APK per ABI is what turns a large universal
-    // build into a much smaller install; the universal one stays available
-    // for sideloading onto an unknown box.
+    // Far less load-bearing since the player became Media3, which decodes
+    // through Android's own MediaCodec rather than shipping its own ffmpeg —
+    // the per-ABI split now saves kilobytes where it used to save tens of
+    // megabytes. Kept because the universal APK is still the sideload path
+    // onto an unknown box.
     splits {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
         }
     }
@@ -43,6 +46,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // The debug keystore, on purpose: this app is sideloaded, not
+            // published, and an unsigned release APK cannot be installed at
+            // all. R8 + shrinking is where the "lighter and faster" build
+            // lives — debug builds carry Compose's runtime checks and none
+            // of the dead-code stripping. Swap for a real keystore if this
+            // ever heads to a store.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

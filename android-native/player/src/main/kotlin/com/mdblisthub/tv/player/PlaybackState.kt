@@ -5,28 +5,30 @@ import com.mdblisthub.tv.core.model.SubtitleOption
 /**
  * The cycle the "esticar" button walks, in the order it walks it.
  *
- * `FIT` is mpv's own default — letterboxed, nothing cropped — so it opens
- * every playback and is the state to fall back to. `FILL` is the one people
- * actually reach for on a phone showing a widescreen release: it crops top
- * and bottom rather than pillarboxing to nothing.
+ * Three modes, not the five the mpv engine had: these map one-to-one onto
+ * what ExoPlayer's own resize modes do, and the two that went away
+ * (forcing 16:9 or 4:3 regardless of the source) were mpv-specific knobs
+ * that only ever produced a wrong-looking picture on correctly-tagged
+ * content — which is nearly all of it.
+ *
+ * `FIT` is the default: letterboxed, nothing cropped. `ZOOM` is the one
+ * people actually reach for on a widescreen release, cropping top and bottom
+ * rather than pillarboxing to nothing. `STRETCH` distorts to fill and is
+ * last on purpose.
  */
-enum class MpvScaleType { FIT, FILL, RATIO_16_9, RATIO_4_3, ORIGINAL }
+enum class VideoScaleType { FIT, ZOOM, STRETCH }
 
 val SCALE_CYCLE = listOf(
-    MpvScaleType.FIT,
-    MpvScaleType.FILL,
-    MpvScaleType.RATIO_16_9,
-    MpvScaleType.RATIO_4_3,
-    MpvScaleType.ORIGINAL,
+    VideoScaleType.FIT,
+    VideoScaleType.ZOOM,
+    VideoScaleType.STRETCH,
 )
 
 /** A label worth showing for a couple of seconds after the button is pressed. */
-fun MpvScaleType.label(): String = when (this) {
-    MpvScaleType.FIT -> "Ajustar à tela"
-    MpvScaleType.FILL -> "Preencher"
-    MpvScaleType.RATIO_16_9 -> "16:9"
-    MpvScaleType.RATIO_4_3 -> "4:3"
-    MpvScaleType.ORIGINAL -> "Tamanho original"
+fun VideoScaleType.label(): String = when (this) {
+    VideoScaleType.FIT -> "Ajustar à tela"
+    VideoScaleType.ZOOM -> "Preencher"
+    VideoScaleType.STRETCH -> "Esticar"
 }
 
 /** Where playback is, as one value the UI can render without branching twice. */
@@ -49,7 +51,14 @@ enum class PlaybackPhase {
     FAILED,
 }
 
-/** One selectable audio or subtitle track, as mpv's `track-list` reports it. */
+/**
+ * One selectable audio or subtitle track.
+ *
+ * `id` is this app's own index into the type-filtered track list, not
+ * anything ExoPlayer assigns — ExoPlayer identifies tracks by
+ * (group, index) pairs, which do not survive being flattened into the Int
+ * the pickers are built around.
+ */
 data class TrackInfo(val id: Int, val label: String)
 
 data class PlaybackState(
@@ -64,7 +73,7 @@ data class PlaybackState(
     val currentAudioId: Int = -1,
     val currentSubtitleId: Int = -1,
     val externalSubtitle: SubtitleOption? = null,
-    val scaleType: MpvScaleType = MpvScaleType.FIT,
+    val scaleType: VideoScaleType = VideoScaleType.FIT,
     val error: String? = null,
 ) {
     val isPlaying: Boolean get() = phase == PlaybackPhase.PLAYING

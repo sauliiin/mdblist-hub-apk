@@ -41,13 +41,44 @@ class MediaRepository(
     fun observeEpisodes(showTmdbId: Int, seasonNumber: Int): Flow<List<Episode>> =
         mediaDao.observeEpisodes(showTmdbId, seasonNumber).map { rows -> rows.map { it.toDomain() } }
 
+    /**
+     * Background warming — the prefetcher on card focus, and the worker in
+     * bulk. A degraded row is retried, but only after
+     * [CachePolicy.PARTIAL_DETAIL_MS], so sweeping the remote across a row of
+     * rate-limited titles does not turn every focus into another failed call.
+     */
     suspend fun ensureDetail(
         type: MediaType,
         tmdbId: Int,
         force: Boolean = false,
     ): Result<Unit> = runCatching {
         val cached = mediaDao.detail(tmdbId, type.mdblist)
-        if (!force && cached != null && !CachePolicy.isStale(cached.fetchedAt, CachePolicy.DETAIL_MS)) {
+        val maxAge = if (cached?.metadataComplete == false) {
+            CachePolicy.PARTIAL_DETAIL_MS
+        } else {
+            CachePolicy.DETAIL_MS
+        }
+        if (!force && cached != null && !CachePolicy.isStale(cached.fetchedAt, maxAge)) {
+            return@runCatching
+        }
+        hydrate(type, tmdbId)
+    }
+
+    /**
+     * What a screen the user is actually looking at asks for.
+     *
+     * Same cache rules for a row that came back whole, but a degraded one is
+     * completed *now* rather than after the backoff above — the common way to
+     * reach a detail screen is to focus a card and press OK a second later,
+     * which is well inside that window, and waiting it out is exactly how a
+     * title ends up on screen with no ratings or reviews.
+     */
+    suspend fun ensureCompleteDetail(type: MediaType, tmdbId: Int): Result<Unit> = runCatching {
+        val cached = mediaDao.detail(tmdbId, type.mdblist)
+        if (cached != null &&
+            cached.metadataComplete &&
+            !CachePolicy.isStale(cached.fetchedAt, CachePolicy.DETAIL_MS)
+        ) {
             return@runCatching
         }
         hydrate(type, tmdbId)
@@ -58,7 +89,9 @@ class MediaRepository(
      *
      * TMDB goes first because it resolves the IMDb id OMDb is keyed by;
      * mdblist and OMDb then run together. Both are allowed to fail — a title
-     * with no aggregated ratings still has a detail screen worth showing.
+     * with no aggregated ratings still has a detail screen worth showing —
+     * but the row records that they did, so the failure is retried instead of
+     * being cached as the truth for a week.
      */
     suspend fun hydrate(type: MediaType, tmdbId: Int) = coroutineScope {
         val tmdb = tmdbApi.detail(
@@ -68,27 +101,39 @@ class MediaRepository(
             language = ApiConfig.LANGUAGE,
             append = TmdbApi.DETAIL_APPEND,
             imageLanguage = TmdbApi.IMAGE_LANGUAGES,
+            videoLanguage = TmdbApi.VIDEO_LANGUAGES,
         )
 
         val imdbId = tmdb.externalIds?.imdbId
         val apiKey = session.currentKey()
 
+        // `Result`, not `getOrNull()`: "the call failed" and "the call
+        // answered with nothing" produce the same null but mean opposite
+        // things to the cache — one is worth retrying, the other is the
+        // title's actual truth.
         val info = async {
-            if (apiKey.isBlank()) null
-            else runCatching { mdblistApi.info(type.mdblist, tmdbId, apiKey, "review") }.getOrNull()
+            if (apiKey.isBlank()) Result.success(null)
+            // `review`, singular: mdblist answers with a `reviews` array only
+            // for that exact spelling. `reviews` or `ratings,reviews` are
+            // accepted with a 200 and simply no reviews in the body.
+            else runCatching { mdblistApi.info(type.mdblist, tmdbId, apiKey, "review") }
         }
         val omdb = async {
-            if (imdbId.isNullOrBlank()) null
-            else runCatching { omdbApi.byImdb(ApiConfig.OMDB_KEY, imdbId, "full") }.getOrNull()
+            if (imdbId.isNullOrBlank()) Result.success(null)
+            else runCatching { omdbApi.byImdb(ApiConfig.OMDB_KEY, imdbId, "full") }
         }
+
+        val infoResult = info.await()
+        val omdbResult = omdb.await()
 
         val entity = buildDetailEntity(
             type = type,
             tmdbId = tmdbId,
             tmdb = tmdb,
-            info = info.await(),
-            omdb = omdb.await(),
+            info = infoResult.getOrNull(),
+            omdb = omdbResult.getOrNull(),
             now = System.currentTimeMillis(),
+            metadataComplete = infoResult.isSuccess && omdbResult.isSuccess,
         )
         mediaDao.upsertDetail(entity)
     }

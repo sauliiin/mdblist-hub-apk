@@ -86,7 +86,7 @@ class DetailViewModel(
         viewModelScope.launch {
             // Usually a no-op: the card's focus already warmed this before the
             // user pressed OK, so the screen paints from Room straight away.
-            graph.media.ensureDetail(type, tmdbId)
+            graph.media.ensureCompleteDetail(type, tmdbId)
             if (type == MediaType.SHOW) graph.media.ensureEpisodes(tmdbId, 1)
             graph.library.refresh(LibraryBucket.WATCHLIST)
             graph.library.refresh(LibraryBucket.COLLECTION)

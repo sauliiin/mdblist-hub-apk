@@ -17,7 +17,7 @@ private val SIZE_TEXT = Regex("""(\d+(?:[.,]\d+)?)\s*(GB|MB|GiB|MiB)""", RegexOp
 /**
  * Normalises an addon's stream entry.
  *
- * Unlike the browser build there is no container blocklist here. mpv opens
+ * Unlike the browser build there is no container blocklist here. ExoPlayer opens
  * MKV, AVI, TS and HLS, so anything with a URL is simply playable — the whole
  * reason this app is native rather than a page.
  */

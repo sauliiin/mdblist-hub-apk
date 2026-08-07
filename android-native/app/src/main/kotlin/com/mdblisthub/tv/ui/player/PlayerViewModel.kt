@@ -1,12 +1,12 @@
 package com.mdblisthub.tv.ui.player
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
-import com.mdblisthub.tv.player.MpvEngine
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,14 +38,14 @@ data class PlayerUiState(
  */
 class PlayerViewModel(
     private val graph: DataGraph,
-    engine: MpvEngine,
+    context: Context,
     private val type: MediaType,
     private val tmdbId: Int,
     private val season: Int?,
     private val episode: Int?,
 ) : ViewModel() {
 
-    val controller = PlaybackController(engine, viewModelScope)
+    val controller = PlaybackController(context, viewModelScope)
 
     private val _ui = MutableStateFlow(PlayerUiState())
     val ui: StateFlow<PlayerUiState> = _ui.asStateFlow()

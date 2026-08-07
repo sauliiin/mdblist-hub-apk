@@ -22,6 +22,14 @@ object CachePolicy {
     /** Cast, artwork and ratings. Ratings drift; nothing else does. */
     val DETAIL_MS: Long = TimeUnit.DAYS.toMillis(7)
 
+    /**
+     * A detail row built while mdblist or OMDb was failing — see
+     * `MediaDetailEntity.metadataComplete`. Short, because the row is wrong
+     * rather than merely old; long enough that a card the remote sweeps past
+     * repeatedly does not retry a rate-limited API on every focus.
+     */
+    val PARTIAL_DETAIL_MS: Long = TimeUnit.MINUTES.toMillis(10)
+
     /** Episode lists only change when a season is airing. */
     val EPISODES_MS: Long = TimeUnit.DAYS.toMillis(2)
 

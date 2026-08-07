@@ -18,17 +18,14 @@ android {
 
 dependencies {
     api(projects.core.model)
-    // The only module that sees mpv. Everything upstream talks to the
+    // The only module that sees ExoPlayer. Everything upstream talks to the
     // engine through `PlaybackController`, so swapping the backend never
-    // reaches the screens.
-    //
-    // No Maven coordinate exists for this — Stremio's own mpv wrapper
-    // (github.com/jarnedemeulemeester/libmpv-android, the same one their
-    // GitHub org actively forks and builds from) only ships a GitHub
-    // Release AAR, not a published artifact. Vendored here rather than
-    // resolved because JitPack cannot complete this repo's NDK cross-compile
-    // build within its time limit — every version there shows `"Error"`.
-    api(files("libs/libmpv-release.aar"))
+    // reaches the screens — which is what made this migration off mpv (and
+    // off libVLC before it) a change to this module alone.
+    api(libs.media3.exoplayer)
+    api(libs.media3.ui)
+    implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.exoplayer.dash)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)

@@ -59,7 +59,7 @@ object RatingsMapper {
                     key = rating.source,
                     label = spec.label,
                     display = spec.display(value),
-                    score = clamp(rating.score?.toDouble() ?: spec.score(value)),
+                    score = clamp(rating.score ?: spec.score(value)),
                     votes = rating.votes,
                     tone = tone,
                 )

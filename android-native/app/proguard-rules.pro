@@ -1,6 +1,4 @@
-# mpv (dev.jdtech.mpv.MPVLib) reaches its Java class from native code, but
-# that keep rule ships as a consumer rule inside the AAR itself and is merged
-# in automatically — nothing to restate here.
+# Media3 ships its own consumer rules, so the player needs nothing here.
 
 # kotlinx.serialization keeps the generated serializers on the companion.
 -keepclassmembers class ** {

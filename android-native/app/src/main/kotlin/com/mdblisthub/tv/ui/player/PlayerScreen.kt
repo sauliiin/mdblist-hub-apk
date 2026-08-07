@@ -67,16 +67,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.mdblisthub.tv.HubApplication
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.player.ExoVideoSurface
 import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.TrackInfo
-import com.mdblisthub.tv.player.MpvVideoSurface
 import com.mdblisthub.tv.player.label
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
@@ -95,16 +94,25 @@ fun PlayerScreen(
     onBack: () -> Unit,
     onOpenAddons: () -> Unit,
 ) {
-    val engine = (LocalContext.current.applicationContext as HubApplication).mpvEngine
+    val appContext = LocalContext.current.applicationContext
     val viewModel = hubViewModel(key = "player-$type-$tmdbId-$season-$episode") {
-        PlayerViewModel(graph, engine, type, tmdbId, season, episode)
+        PlayerViewModel(graph, appContext, type, tmdbId, season, episode)
     }
 
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val playback by viewModel.controller.state.collectAsStateWithLifecycle()
 
     var osdVisibleUntil by remember { mutableLongStateOf(System.currentTimeMillis() + OSD_TIMEOUT_MS) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    /**
+     * One flip at the deadline, rather than a clock the UI reads.
+     *
+     * This used to hold `now`, re-sampled every 250ms, which recomposed the
+     * whole player screen sixteen times over a four-second OSD just to
+     * discover it was still visible. Nothing on screen shows the current
+     * time, so the only question worth asking is "has it expired yet", and
+     * that has exactly one answer change.
+     */
+    var osdExpired by remember { mutableStateOf(false) }
     var subtitlePickerOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
     // Whether one of the OSD buttons currently holds focus. While it does,
@@ -119,14 +127,13 @@ fun PlayerScreen(
 
     // Paused, or nothing decoding yet: the OSD has nothing to hide behind, so
     // it simply stays up rather than counting down to invisible controls.
-    val osdVisible = now < osdVisibleUntil || !playback.isPlaying
+    val osdVisible = !osdExpired || !playback.isPlaying
 
     LaunchedEffect(osdVisibleUntil) {
-        while (System.currentTimeMillis() < osdVisibleUntil) {
-            delay(250)
-            now = System.currentTimeMillis()
-        }
-        now = System.currentTimeMillis()
+        osdExpired = false
+        val remaining = osdVisibleUntil - System.currentTimeMillis()
+        if (remaining > 0) delay(remaining)
+        osdExpired = true
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -149,8 +156,15 @@ fun PlayerScreen(
         }
     }
 
-    fun poke() { osdVisibleUntil = System.currentTimeMillis() + OSD_TIMEOUT_MS }
-    fun hideNow() { osdVisibleUntil = 0L }
+    // Both flip `osdExpired` directly rather than leaving it to the effect
+    // above: the effect runs a frame later, which on the hide path is long
+    // enough to see the OSD blink back before it goes.
+    fun poke() {
+        osdExpired = false
+        osdVisibleUntil = System.currentTimeMillis() + OSD_TIMEOUT_MS
+    }
+
+    fun hideNow() { osdExpired = true }
 
     Box(
         Modifier
@@ -230,8 +244,9 @@ fun PlayerScreen(
                 )
             },
     ) {
-        MpvVideoSurface(
+        ExoVideoSurface(
             controller = viewModel.controller,
+            scaleType = playback.scaleType,
             modifier = Modifier.fillMaxSize(),
         )
 

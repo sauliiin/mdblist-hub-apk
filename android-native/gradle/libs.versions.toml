@@ -8,12 +8,9 @@
 # two below are held one release back. Raising all three together is a single
 # coordinated change — see README.
 compileSdk = "36"
-# 26, not 24: the mpv engine's AAR declares minSdkVersion 26 (its native
-# MediaCodec/Surface path assumes Oreo APIs), so the manifest merger holds
-# the floor here regardless of what the rest of the app could otherwise run
-# on. Android 8.0 shipped in 2017 — the boxes this excludes are rare on TVs
-# still receiving addon-based streaming apps at all.
-minSdk = "26"
+# Back to 24 now that the player is Media3: the 26 floor existed only because
+# the vendored mpv AAR declared it, and Media3 asks for 21.
+minSdk = "24"
 targetSdk = "36"
 
 agp = "8.13.2"
@@ -36,6 +33,12 @@ serialization = "1.11.0"
 okhttp = "5.4.0"
 retrofit = "3.0.0"
 coil = "3.5.0"
+
+# Media3/ExoPlayer — Google's own player, and the reason the engine moved off
+# mpv: its load control is built for exactly this app's workload (third-party
+# CDNs and debrid mirrors over home Wi-Fi), where a fixed cache size stalls
+# and an adaptive buffer does not.
+media3 = "1.11.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -75,6 +78,15 @@ retrofit-serialization = { module = "com.squareup.retrofit2:converter-kotlinx-se
 
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+
+media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
+# `media3-ui` is what renders subtitles and owns the resize modes; without it
+# a bare SurfaceView shows video with no cues at all.
+media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
+# Addons hand back HLS and DASH manifests as readily as plain files, and
+# neither plays without its own extractor module.
+media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
+media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-dash", version.ref = "media3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

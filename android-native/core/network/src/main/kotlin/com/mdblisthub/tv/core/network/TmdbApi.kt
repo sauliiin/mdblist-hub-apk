@@ -23,6 +23,7 @@ interface TmdbApi {
         @Query("language") language: String,
         @Query("append_to_response") append: String,
         @Query("include_image_language") imageLanguage: String,
+        @Query("include_video_language") videoLanguage: String,
     ): TmdbDetailDto
 
     @GET("tv/{id}/season/{season}")
@@ -57,5 +58,7 @@ interface TmdbApi {
 
         /** `null` is TMDB's spelling for "artwork with no text on it". */
         const val IMAGE_LANGUAGES = "pt,en,null"
+
+        const val VIDEO_LANGUAGES = "pt,en,null"
     }
 }

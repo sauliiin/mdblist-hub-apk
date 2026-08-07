@@ -82,7 +82,8 @@ fun MdbItemDto.toEntity(now: Long): MediaEntity {
         imdbId = imdbId ?: ids?.imdb,
         title = title,
         year = releaseYear,
-        // mdblist serves `w200`, which is visibly soft on a 10-foot card.
+        // Normalised onto POSTER_CARD so every card, whatever its source,
+        // downloads the one size the row actually paints.
         posterUrl = TmdbImages.upscale(poster),
         backdropUrl = null,
         genres = genre.orEmpty(),
@@ -125,6 +126,7 @@ fun buildDetailEntity(
     info: MdbInfoDto?,
     omdb: OmdbDto?,
     now: Long,
+    metadataComplete: Boolean = true,
 ): MediaDetailEntity {
     val credits = tmdb.credits ?: tmdb.aggregateCredits
     val crew = credits?.crew.orEmpty()
@@ -209,6 +211,7 @@ fun buildDetailEntity(
                 updatedAt = review.updatedAt,
             )
         },
+        metadataComplete = metadataComplete,
         fetchedAt = now,
     )
 }

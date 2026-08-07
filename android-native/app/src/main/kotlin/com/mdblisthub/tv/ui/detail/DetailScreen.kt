@@ -695,11 +695,11 @@ private fun ReviewProvider.color(): Color = when (this) {
  * Opens the trailer in the YouTube app, or a browser if there is no YouTube
  * app to hand it to.
  *
- * The player embedded in this app cannot do it: mpv plays media files, not
- * YouTube's streaming protocol, and this build carries none of the resolver
- * scripts (`ytdl_hook.lua`) that would let it try. Handing off to an app
- * built for exactly this is the native equivalent of the `<iframe>` the web
- * build uses — both delegate instead of reimplementing a video platform.
+ * The player embedded in this app cannot do it: ExoPlayer plays media files,
+ * not YouTube's streaming protocol, and this build carries no resolver for
+ * it. Handing off to an app built for exactly this is the native equivalent
+ * of the `<iframe>` the web build uses — both delegate instead of
+ * reimplementing a video platform.
  */
 private fun openTrailer(context: Context, youtubeKey: String) {
     val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$youtubeKey"))

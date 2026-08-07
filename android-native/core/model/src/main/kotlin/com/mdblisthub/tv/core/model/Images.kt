@@ -11,7 +11,11 @@ package com.mdblisthub.tv.core.model
 object TmdbImages {
     const val BASE = "https://image.tmdb.org/t/p"
 
-    const val POSTER_CARD = "w342"
+    // `w185`, not `w342`: the cards this feeds are ~89dp wide, which at a
+    // 1080p panel's 2x density is ~178px — w342 was double the pixels the
+    // screen could show, paid for on every card of every row. Sized for the
+    // card, not the poster's best self; the detail screen has POSTER_LARGE.
+    const val POSTER_CARD = "w185"
     const val POSTER_LARGE = "w500"
     const val BACKDROP_FANART = "w1280"
     const val STILL = "w300"

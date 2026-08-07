@@ -14,21 +14,12 @@ import coil3.request.crossfade
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.work.HubWorkerFactory
 import com.mdblisthub.tv.core.data.work.ImageWarmer
-import com.mdblisthub.tv.player.MpvEngine
 import okio.Path.Companion.toOkioPath
 
 class HubApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
 
     lateinit var graph: DataGraph
         private set
-
-    /**
-     * One mpv instance per process. Creating it loads several megabytes of
-     * native library, so it is built on first use and then kept for good —
-     * rebuilding it between episodes is the easiest way to make a set-top
-     * box stutter.
-     */
-    val mpvEngine: MpvEngine by lazy { MpvEngine(this) }
 
     override fun onCreate() {
         super.onCreate()

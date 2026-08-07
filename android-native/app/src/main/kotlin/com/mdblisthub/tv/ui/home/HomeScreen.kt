@@ -15,10 +15,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,18 +53,25 @@ fun HomeScreen(
     val lists by viewModel.lists.collectAsStateWithLifecycle()
     val resumePoints by viewModel.resumePoints.collectAsStateWithLifecycle()
     val focused by viewModel.focused.collectAsStateWithLifecycle()
+    val focusedBackdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
     val becauseYouWatched by viewModel.becauseYouWatched.collectAsStateWithLifecycle()
 
-    val rail = listOf(
-        RailItem("home", "Início", Icons.Default.Home),
-        RailItem("addons", "Addons", Icons.Default.Extension),
-        RailItem("exit", "Sair", Icons.Default.Logout),
-    )
+    // Remembered because this composable recomposes on every card focus (it
+    // reads `focused` for the hero panel), and neither of these depends on
+    // that — rebuilding them per focus is pure allocation.
+    val rail = remember {
+        listOf(
+            RailItem("home", "Início", Icons.Default.Home),
+            RailItem("addons", "Addons", Icons.Default.Extension),
+            RailItem("exit", "Sair", Icons.AutoMirrored.Filled.Logout),
+        )
+    }
+    val resumeCards = remember(resumePoints) { resumePoints.map { it.toCardItem() } }
 
     Box(Modifier.fillMaxSize()) {
         // The fanart follows focus, the way Estuary does it: whatever the
         // remote is pointing at fills the screen behind the rows.
-        FanartBackdrop(url = focused?.backdropUrl ?: focused?.posterUrl)
+        FanartBackdrop(url = focusedBackdropUrl)
 
         Row(Modifier.fillMaxSize()) {
             SideRail(
@@ -102,7 +110,7 @@ fun HomeScreen(
                     item(key = "resume") {
                         MediaRow(
                             title = "Continuar assistindo",
-                            items = resumePoints.map { it.toCardItem() },
+                            items = resumeCards,
                             onItemClick = { card ->
                                 resumePoints.firstOrNull { it.tmdbId == card.tmdbId }
                                     ?.let(onResume)

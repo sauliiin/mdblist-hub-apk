@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 /** Why a stream can or cannot reach the player. */
 @Serializable
 enum class StreamKind {
-    /** A URL mpv can open directly — the only kind this app plays. */
+    /** A URL ExoPlayer can open directly — the only kind this app plays. */
     DIRECT,
 
     /** An `infoHash` with no debrid resolution behind it. */
@@ -19,7 +19,7 @@ enum class StreamKind {
  * A source offered by an installed Stremio addon.
  *
  * Note what is *not* here: the container blocklist the browser build needed.
- * With mpv embedded, MKV, AVI, TS and HLS all play, so a direct URL is simply
+ * With ExoPlayer embedded, MKV, TS, HLS and DASH all play, so a direct URL is
  * playable — which is the main reason this app exists as a native one.
  */
 @Serializable
@@ -36,7 +36,7 @@ data class PlayableStream(
     val filename: String? = null,
     /**
      * Headers the addon asked for (`behaviorHints.proxyHeaders`). They are
-     * handed to mpv as the `user-agent`/`http-header-fields` properties,
+     * handed to the HTTP data source as request headers,
      * since some debrid links 403 without the right user agent or referer.
      */
     val headers: Map<String, String> = emptyMap(),
@@ -55,8 +55,9 @@ data class StreamQuery(
 /**
  * An external subtitle track.
  *
- * mpv reads SRT, ASS/SSA and SUB straight from a URL, so unlike the browser
- * build there is no WebVTT conversion step — the URL goes to the engine as-is.
+ * ExoPlayer side-loads SRT, VTT, SSA/ASS and TTML from a URL, so unlike the
+ * browser build there is no WebVTT conversion step — the URL goes to the
+ * engine as-is.
  */
 @Serializable
 data class SubtitleOption(
