@@ -149,7 +149,7 @@ fun DetailScreen(
                 bottom = HubDimens.ScreenPaddingVertical * 2,
             ),
         ) {
-            item(key = "head") {
+            stickyHeader {
                 Column(Modifier.padding(horizontal = HubDimens.ScreenPaddingHorizontal)) {
                     // Kodi's skins lead with the clearlogo when there is one;
                     // it reads better over artwork than set type ever does.
@@ -464,6 +464,104 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastCli
                 }
             }
         }
+    }
+}
+
+/**
+ * The cast popup — a biography borrowed from Wikipedia, since a TMDB credit
+ * carries nothing past a name, a character and a photo.
+ *
+ * Keyed off `member` rather than reading `state.member` directly: the state
+ * clears to null the instant [onDismiss] fires, and this composable would
+ * otherwise have nothing left to render for the one frame before the `if`
+ * guard around its call site catches up.
+ */
+@Composable
+private fun CastBioOverlay(
+    member: CastMember,
+    state: CastBioState,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(HubColors.Background.copy(alpha = 0.75f))
+            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .widthIn(max = 560.dp)
+                .heightIn(max = 520.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(HubColors.Surface)
+                .border(1.dp, HubColors.Border, RoundedCornerShape(16.dp))
+                // Consumes taps inside the card so they do not also reach the
+                // scrim's dismiss handler behind it.
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(
+                    Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(HubColors.SurfaceStrong),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val photoUrl = member.profileUrl ?: state.summary?.thumbnailUrl
+                    if (photoUrl != null) {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = member.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(member.name, style = MaterialTheme.typography.headlineMedium, color = HubColors.Text)
+                    member.character?.let {
+                        Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
+                    }
+                }
+            }
+
+            when {
+                state.loading -> Box(Modifier.fillMaxWidth().padding(vertical = 24.dp)) {
+                    HubSpinner(size = 32.dp, modifier = Modifier.align(Alignment.Center))
+                }
+                state.error != null -> Text(
+                    text = state.error,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.TextDim,
+                )
+                state.summary != null -> Text(
+                    text = state.summary.extract,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.TextDim,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                state.summary?.pageUrl?.let { url ->
+                    HubButton(text = "Ver na Wikipedia", onClick = { openUrl(context, url) })
+                }
+                HubButton(text = "Fechar", onClick = onDismiss)
+            }
+        }
+    }
+}
+
+private fun openUrl(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
+        // No browser to hand it to — nothing left to do.
     }
 }
 
