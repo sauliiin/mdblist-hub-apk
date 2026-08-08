@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
@@ -96,7 +97,7 @@ class PlayerViewModel(
         val resumeAt = graph.playback.resumeFor(scrobbleTarget)
 
         _ui.update { it.copy(searching = false) }
-        controller.play(candidates, resumeAt)
+        controller.play(candidates, resumeAt, expectedRuntimeMinutes(detail))
 
         // Subtitles are fetched after playback has been handed off: they take
         // as long as the streams did, and nothing should wait on them.
@@ -104,6 +105,34 @@ class PlayerViewModel(
             val options = graph.streams.subtitles(type, stremioId)
             _ui.update { it.copy(subtitles = options) }
         }
+    }
+
+    /**
+     * How long this exact thing should run, which is what lets the controller
+     * recognise a "file removed" clip served in place of the film.
+     *
+     * For an episode the series-level runtime is useless — a 45-minute show
+     * next to a two-minute decoy is the comparison that matters, not the
+     * whole season — so the episode's own runtime is preferred and the
+     * series average is only the fallback. Returning null where nothing is
+     * known disables the check rather than letting it guess.
+     */
+    private suspend fun expectedRuntimeMinutes(detail: MediaDetail?): Int? {
+        val seasonNumber = season
+        val episodeNumber = episode
+
+        if (type == MediaType.SHOW && seasonNumber != null && episodeNumber != null) {
+            val episodes = runCatching {
+                graph.media.observeEpisodes(tmdbId, seasonNumber).first()
+            }.getOrNull()
+
+            episodes
+                ?.firstOrNull { it.episodeNumber == episodeNumber }
+                ?.runtimeMinutes
+                ?.takeIf { it > 0 }
+                ?.let { return it }
+        }
+        return detail?.runtimeMinutes?.takeIf { it > 0 }
     }
 
     /**

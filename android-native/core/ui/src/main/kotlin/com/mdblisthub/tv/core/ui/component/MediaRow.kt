@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -60,10 +60,32 @@ fun MediaRow(
     isEditMode: Boolean = false,
     hidden: Boolean = false,
     onToggleVisibility: () -> Unit = {},
-    onItemClick: (MediaItem) -> Unit,
+    onItemClick: (MediaItem) -> Unit = {},
     modifier: Modifier = Modifier,
     onItemFocused: (MediaItem) -> Unit = {},
     onReachedEnd: () -> Unit = {},
+    /**
+     * Overridable and index-aware because [MediaItem.key] — `type:tmdbId` —
+     * is right for every catalog row, where a title appears at most once,
+     * but not for "Continuar assistindo": two different in-progress episodes
+     * of the same show carry the same tmdbId, and `toCardItem()` drops
+     * season/episode entirely, so the two cards are not just same-keyed but
+     * structurally *equal* `MediaItem`s. No function of the item alone can
+     * tell them apart — only their position in the list the caller built
+     * can, which is why this takes the index too, and why the crash this
+     * exists to fix ("Key ... was already used") could not be solved from
+     * inside this component.
+     */
+    key: (Int, MediaItem) -> Any = { _, item -> item.key },
+    /**
+     * Takes priority over [onItemClick] when set. The same ambiguity the
+     * custom [key] exists for — two cards that are equal `MediaItem`s —
+     * means `onItemClick(item)` alone cannot tell "Continuar assistindo"
+     * which of two identical-looking cards was actually pressed either;
+     * only the position can, so that row supplies this instead of widening
+     * every other row's simpler, already-correct `(MediaItem) -> Unit`.
+     */
+    onItemClickIndexed: ((Int, MediaItem) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
 
@@ -106,10 +128,12 @@ fun MediaRow(
                     .fillMaxWidth()
                     .focusRestorer(),
             ) {
-                items(items, key = { it.key }) { item ->
+                itemsIndexed(items, key = key) { index, item ->
                     PosterCard(
                         item = item,
-                        onClick = { onItemClick(item) },
+                        onClick = {
+                            onItemClickIndexed?.invoke(index, item) ?: onItemClick(item)
+                        },
                         onFocused = { focused ->
                             onItemFocused(focused)
                             // Paging off focus rather than off scroll position:

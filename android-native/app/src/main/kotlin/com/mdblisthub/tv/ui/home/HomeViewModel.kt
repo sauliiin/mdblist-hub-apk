@@ -100,6 +100,17 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    val focusedDetail: StateFlow<com.mdblisthub.tv.core.model.MediaDetail?> = _focused
+        .debounce { if (it == null) 0L else FANART_SETTLE_MS }
+        .flatMapLatest { item ->
+            if (item == null) {
+                flowOf(null)
+            } else {
+                graph.media.observeDetail(item.type, item.tmdbId)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     /**
      * "Porque você assistiu" — built once per visit, not persisted: unlike
      * the mdblist rows above, TMDB's recommendations have nothing worth

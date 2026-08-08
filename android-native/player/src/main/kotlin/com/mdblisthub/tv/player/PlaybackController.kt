@@ -164,6 +164,34 @@ class PlaybackController(
     private var resumePercent: Float? = null
     private var resumeApplied = false
 
+    /**
+     * How long the title is supposed to run, from the metadata — the only
+     * thing that makes a decoy recognisable. Null when unknown, which
+     * disables the check rather than guessing.
+     */
+    private var expectedRuntimeMs: Long? = null
+
+    /**
+     * Candidates already unmasked as decoys, by queue position.
+     *
+     * Kept because the cascade walks the queue twice: without this, the
+     * second pass would cheerfully re-open the same "this file was removed"
+     * clip that was just rejected, and the user would watch it start again.
+     */
+    private val decoyIndices = mutableSetOf<Int>()
+
+    /**
+     * Decoys hit back to back, without a real source in between.
+     *
+     * One decoy means one dead mirror. Several in a row means the debrid
+     * provider itself is refusing everything — rate limiting, most often —
+     * and the placeholder is the same clip no matter which candidate asks for
+     * it. Walking sixty more candidates cannot fix that; it just spends a
+     * minute arriving at the same wall, so the streak is what turns "try the
+     * next one" into "stop and say what is actually wrong".
+     */
+    private var decoyStreak = 0
+
     private var watchdog: Job? = null
     private var ticker: Job? = null
 
@@ -199,13 +227,22 @@ class PlaybackController(
      * been checked, which is what makes opening a title fast instead of
      * waiting on whichever addon or probe answers slowest.
      */
-    fun play(candidates: Flow<PlayableStream>, resumeAtPercent: Float? = null) {
+    fun play(
+        candidates: Flow<PlayableStream>,
+        resumeAtPercent: Float? = null,
+        expectedRuntimeMinutes: Int? = null,
+    ) {
         stopInternal()
         subtitleTrack = null
 
         queue = mutableListOf()
         queueIndex = -1
         passes = 0
+        decoyIndices.clear()
+        decoyStreak = 0
+        expectedRuntimeMs = expectedRuntimeMinutes
+            ?.takeIf { it > 0 }
+            ?.let { it * 60_000L }
         candidatesCollecting = true
         awaitingCandidate = true
         resumePercent = resumeAtPercent?.takeIf { it > 1f && it < 95f }
@@ -271,6 +308,8 @@ class PlaybackController(
         }
 
         queueIndex = nextIndex
+        if (queueIndex in decoyIndices) return tryAdvance()
+
         val candidate = queue[queueIndex]
         val url = candidate.url ?: return tryAdvance()
 
@@ -425,6 +464,12 @@ class PlaybackController(
     }
 
     private fun onReady() {
+        if (isDecoy()) return rejectDecoy()
+
+        // A real source proves the provider is answering properly after all,
+        // so any run of decoys before it was mirror-by-mirror bad luck rather
+        // than the provider being down.
+        decoyStreak = 0
         watchdog?.cancel()
         watchdog = null
 
@@ -456,11 +501,61 @@ class PlaybackController(
      * keeps a "Voltar" reachable by the same D-pad path as a real failure.
      */
     private fun onEnded() {
+        // A decoy can reach here rather than READY: carrying a resume position
+        // from a previous source seeks straight past the end of a two-minute
+        // clip. Announcing "Fim" for a film nobody watched is the worst
+        // possible reading of that, so it is checked here too.
+        if (isDecoy()) return rejectDecoy()
+
         watchdog?.cancel()
         watchdog = null
         ticker?.cancel()
         ticker = null
         _state.update { it.copy(phase = PlaybackPhase.ENDED) }
+    }
+
+    /**
+     * Whether what just opened is too short to be the title that was asked
+     * for — the "this file has been removed" clip a lot of dead mirrors serve
+     * in place of the film, which opens and plays perfectly and is the one
+     * failure the source cascade cannot otherwise see. Every other kind of
+     * dead source refuses to open; this one succeeds at being the wrong
+     * thing.
+     *
+     * Both conditions have to hold. The fraction alone would throw away a
+     * good file whenever the metadata's runtime is wrong, which happens; the
+     * absolute cap alone would throw away genuinely short titles. Together
+     * they only ever reject something that is both far shorter than expected
+     * and short in its own right, which is exactly the decoy and very little
+     * else.
+     */
+    private fun isDecoy(): Boolean {
+        val expected = expectedRuntimeMs ?: return false
+        val duration = player.duration
+        if (duration <= 0) return false
+
+        return duration < expected * DECOY_MAX_FRACTION && duration < DECOY_ABSOLUTE_CAP_MS
+    }
+
+    /** Drops the current candidate and moves on, without disturbing the resume point. */
+    private fun rejectDecoy() {
+        watchdog?.cancel()
+        watchdog = null
+        decoyIndices += queueIndex
+        decoyStreak++
+
+        if (decoyStreak >= DECOY_STREAK_LIMIT) {
+            fail(
+                "As fontes estão devolvendo um aviso no lugar do filme, o que quase sempre " +
+                    "é o provedor debrid limitando requisições. Espere alguns minutos e tente de novo.",
+            )
+            return
+        }
+
+        // `resumeApplied` is deliberately left alone: nothing was watched, so
+        // whatever resume point the user had is still owed to the next
+        // candidate that turns out to be the real film.
+        tryAdvance()
     }
 
     private fun fail(message: String) {
@@ -699,6 +794,17 @@ class PlaybackController(
          */
         const val ATTEMPT_HARD_CAP_MS = 45_000L
         const val WATCHDOG_POLL_MS = 1_500L
+
+        /**
+         * A removal notice runs 30s to a couple of minutes against a feature
+         * of ninety-plus, so the real gap is enormous; half is a deliberately
+         * loose line that no correct file gets anywhere near.
+         */
+        const val DECOY_MAX_FRACTION = 0.5
+        const val DECOY_ABSOLUTE_CAP_MS = 15 * 60_000L
+
+        /** Decoys in a row that mean the provider, not the mirror, is the problem. */
+        const val DECOY_STREAK_LIMIT = 3
         const val MAX_PASSES = 2
         const val TICK_MS = 500L
         const val SUBTITLE_TICK_MS = 120L

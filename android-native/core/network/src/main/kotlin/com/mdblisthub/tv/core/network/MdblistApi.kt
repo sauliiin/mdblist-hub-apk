@@ -7,6 +7,7 @@ import com.mdblisthub.tv.core.network.dto.MdbItemDto
 import com.mdblisthub.tv.core.network.dto.MdbListDto
 import com.mdblisthub.tv.core.network.dto.MdbUserDto
 import com.mdblisthub.tv.core.network.dto.PlaybackSessionDto
+import kotlinx.serialization.json.JsonObject
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -66,15 +67,21 @@ interface MdblistApi {
     ): Response<ResponseBody>
 
     /**
-     * Scrobbling goes out form-encoded with the target in bracket notation
-     * (`movie[ids][imdb]`), which is the shape mdblist's schema documents.
+     * Scrobbling goes out as nested JSON — `{"progress":..,"movie":{"ids":{..}}}`.
+     *
+     * It used to be form-encoded with the target in bracket notation, on the
+     * reading that mdblist's schema documented that shape. It does not accept
+     * it: every such call answered `400 {"non_field_errors":["Either 'movie'
+     * or 'show' must be provided"]}`, because the bracket keys are never
+     * decoded back into a nested object, so the field it demands is simply
+     * absent. Verified against the live API — the same target as JSON answers
+     * 200 and stores the point.
      */
-    @FormUrlEncoded
     @POST("scrobble/{action}")
     suspend fun scrobble(
         @Path("action") action: String,
         @Query("apikey") apiKey: String,
-        @FieldMap fields: Map<String, String>,
+        @Body body: JsonObject,
     ): Response<ResponseBody>
 
     /** Paused sessions, which is what makes a title resumable across devices. */

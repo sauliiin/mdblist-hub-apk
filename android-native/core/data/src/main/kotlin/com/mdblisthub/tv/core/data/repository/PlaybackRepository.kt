@@ -15,6 +15,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.util.Locale
 
 /**
@@ -100,8 +103,11 @@ class PlaybackRepository(
     }
 
     /**
-     * The body goes out form-encoded with the target in bracket notation
-     * (`movie[ids][imdb]`), which is the shape mdblist's schema documents.
+     * The body goes out as nested JSON, which is what mdblist actually reads.
+     *
+     * A show additionally has to carry `season` — the API rejects a show
+     * target without one outright — and both kinds need at least one id
+     * inside `ids`, which the guard above already assures.
      */
     private suspend fun send(
         action: String,
@@ -111,18 +117,25 @@ class PlaybackRepository(
         val key = session.currentKey()
         if (key.isBlank() || (target.imdbId == null && target.tmdbId == null)) return@runCatching
 
-        val root = if (target.type == MediaType.SHOW) "show" else "movie"
-        val fields = buildMap {
-            put("progress", String.format(Locale.US, "%.2f", progress))
-            target.imdbId?.let { put("$root[ids][imdb]", it) }
-            target.tmdbId?.let { put("$root[ids][tmdb]", it.toString()) }
-            if (root == "show" && target.season != null && target.episode != null) {
-                put("show[season]", target.season.toString())
-                put("show[episode]", target.episode.toString())
+        val ids = buildJsonObject {
+            target.imdbId?.let { put("imdb", it) }
+            target.tmdbId?.let { put("tmdb", it) }
+        }
+
+        val body = buildJsonObject {
+            put("progress", String.format(Locale.US, "%.2f", progress).toDouble())
+            if (target.type == MediaType.SHOW) {
+                putJsonObject("show") {
+                    put("ids", ids)
+                    target.season?.let { put("season", it) }
+                    target.episode?.let { put("episode", it) }
+                }
+            } else {
+                putJsonObject("movie") { put("ids", ids) }
             }
         }
 
-        val response = api.scrobble(action, key, fields)
+        val response = api.scrobble(action, key, body)
         check(response.isSuccessful) { "scrobble/$action respondeu ${response.code()}" }
     }
 }

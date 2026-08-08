@@ -1,9 +1,16 @@
 package com.mdblisthub.tv.ui.home
 
+import androidx.compose.ui.draw.clipToBounds
+import kotlinx.coroutines.isActive
+import androidx.compose.foundation.verticalScroll
+
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,6 +64,8 @@ import com.mdblisthub.tv.core.ui.component.RailItem
 import com.mdblisthub.tv.core.ui.component.SideRail
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.model.MediaDetail
+import coil3.compose.AsyncImage
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.flow.StateFlow
 
@@ -90,7 +100,7 @@ private val RowPivotScroll = object : BringIntoViewSpec {
         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
 
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        val pivot = ROW_PIVOT * containerSize
+        val pivot = if (HubColors.isNetflixy) 0.18f * containerSize else ROW_PIVOT * containerSize
 
         // A row tall enough that parking it at the pivot would hang its
         // bottom off-screen is aligned to the bottom edge instead — parking
@@ -123,6 +133,7 @@ fun HomeScreen(
     val resumePoints by viewModel.resumePoints.collectAsStateWithLifecycle()
     val focused by viewModel.focused.collectAsStateWithLifecycle()
     val focusedBackdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
+    val focusedDetail by viewModel.focusedDetail.collectAsStateWithLifecycle()
     val becauseYouWatched by viewModel.becauseYouWatched.collectAsStateWithLifecycle()
     val isEditMode by viewModel.isEditMode.collectAsStateWithLifecycle()
 
@@ -168,13 +179,13 @@ fun HomeScreen(
     // Remembered because this composable recomposes on every card focus (it
     // reads `focused` for the hero panel), and neither of these depends on
     // that — rebuilding them per focus is pure allocation.
-    val rail = remember(isEditMode) {
+    val rail = remember(isEditMode, HubColors.isCyberpunk, HubColors.isNetflixy) {
         listOf(
             RailItem("home", "Início", Icons.Default.Home),
             RailItem("search", "Busca", Icons.Default.Search),
             RailItem("addons", "Addons", Icons.Default.Extension),
             RailItem("lists", if (isEditMode) "Concluir" else "Listas", if (isEditMode) Icons.Default.Check else Icons.AutoMirrored.Filled.ViewList),
-            RailItem("theme", if (HubColors.isCyberpunk) "Normal" else "Cyberpunk", Icons.Default.Settings),
+            RailItem("theme", if (HubColors.isCyberpunk) "Cyberpunk" else if (HubColors.isNetflixy) "Netflixy" else "Normal", Icons.Default.Settings),
             RailItem("exit", "Sair", Icons.AutoMirrored.Filled.Logout),
         )
     }
@@ -194,7 +205,7 @@ fun HomeScreen(
                         "search" -> onOpenSearch()
                         "addons" -> onOpenAddons()
                         "lists" -> viewModel.toggleEditMode()
-                        "theme" -> HubColors.toggleCyberpunk()
+                        "theme" -> HubColors.toggleTheme()
                         "exit" -> showExitDialog = true
                     }
                 },
@@ -205,35 +216,56 @@ fun HomeScreen(
                 return@Row
             }
 
-            CompositionLocalProvider(LocalBringIntoViewSpec provides RowPivotScroll) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                // Tighter than HubDimens.RowSpacing on purpose — with the
-                // smaller posters, this is what keeps two rows of a list on
-                // screen together instead of one full row plus a sliver of
-                // the next.
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    top = 12.dp,
-                    // Room to park the last row at the pivot instead of
-                    // stopping short with it pinned to the bottom edge.
-                    bottom = HubDimens.ScreenPaddingVertical * 8,
-                ),
-            ) {
-                item(key = "hero") {
-                    HeroPanel(focused)
+            Column(Modifier.fillMaxSize()) {
+                if (HubColors.isNetflixy) {
+                    Box(Modifier.weight(1f)) {
+                        HeroPanel(focused, focusedDetail)
+                    }
                 }
+
+                CompositionLocalProvider(LocalBringIntoViewSpec provides RowPivotScroll) {
+                    LazyColumn(
+                        modifier = if (HubColors.isNetflixy) 
+                            Modifier.fillMaxWidth().height(264.dp).clipToBounds() 
+                        else Modifier.fillMaxSize(),
+                        // Tighter than HubDimens.RowSpacing on purpose — with the
+                        // smaller posters, this is what keeps two rows of a list on
+                        // screen together instead of one full row plus a sliver of
+                        // the next.
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            top = 12.dp,
+                            // Room to park the last row at the pivot instead of
+                            // stopping short with it pinned to the bottom edge.
+                            bottom = HubDimens.ScreenPaddingVertical * 8,
+                        ),
+                    ) {
+                        if (!HubColors.isNetflixy) {
+                            item(key = "hero") {
+                                HeroPanel(focused, focusedDetail)
+                            }
+                        }
 
                 if (resumePoints.isNotEmpty() && !isEditMode) {
                     item(key = "resume") {
                         MediaRow(
                             title = "Continuar assistindo",
                             items = resumeCards,
-                            onItemClick = { card ->
-                                resumePoints.firstOrNull { it.tmdbId == card.tmdbId }
-                                    ?.let(onResume)
-                            },
+                            // `card` alone cannot say which episode this is —
+                            // `toCardItem()` drops season/episode, so two
+                            // in-progress episodes of the same show produce
+                            // equal `MediaItem`s, and `indexOf` on those would
+                            // always resolve to the *first* one regardless of
+                            // which card was actually pressed. `resumeCards`
+                            // and `resumePoints` are the same list at the same
+                            // indices (see their construction above), so only
+                            // the position — not the card's own equality —
+                            // can say correctly which point this was.
                             onItemFocused = viewModel::onFocused,
+                            key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
+                            onItemClickIndexed = { index, _ ->
+                                resumePoints.getOrNull(index)?.let(onResume)
+                            },
                         )
                     }
                 }
@@ -264,6 +296,7 @@ fun HomeScreen(
                             onItemFocused = viewModel::onFocused,
                         )
                     }
+                }
                 }
             }
             }
@@ -306,39 +339,130 @@ private fun ListRow(
 }
 
 @Composable
-private fun HeroPanel(item: MediaItem?) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
-            .height(76.dp),
-        verticalArrangement = Arrangement.Bottom,
-    ) {
-        if (item == null) {
+private fun AutoScrollText(
+    text: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = androidx.compose.foundation.rememberScrollState()
+    LaunchedEffect(text) {
+        scrollState.scrollTo(0)
+        kotlinx.coroutines.delay(3000)
+        while (isActive) {
+            val max = scrollState.maxValue
+            if (max > 0) {
+                scrollState.animateScrollTo(max, animationSpec = androidx.compose.animation.core.tween(durationMillis = max * 40, easing = androidx.compose.animation.core.LinearEasing))
+                kotlinx.coroutines.delay(3000)
+                scrollState.animateScrollTo(0, animationSpec = androidx.compose.animation.core.tween(durationMillis = 500))
+                kotlinx.coroutines.delay(2000)
+            } else {
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        modifier = modifier.verticalScroll(scrollState)
+    )
+}
+
+@Composable
+private fun HeroPanel(item: MediaItem?, itemDetail: MediaDetail?) {
+    if (HubColors.isNetflixy) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = HubDimens.ScreenPaddingHorizontal, end = HubDimens.ScreenPaddingHorizontal, bottom = 4.dp)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            if (item == null) {
+                Text(
+                    text = "mdblist hub",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = HubColors.Text,
+                )
+                return@Column
+            }
+
+            val logoUrl = itemDetail?.logoUrl
+            if (logoUrl != null) {
+                AsyncImage(
+                    model = logoUrl,
+                    contentDescription = item.title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.height(100.dp).padding(bottom = 20.dp),
+                    alignment = Alignment.BottomStart,
+                )
+            } else {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = HubColors.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 20.dp)
+                )
+            }
+            
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+                listOfNotNull(
+                    item.year?.toString(),
+                    if (item.type == MediaType.SHOW) "Série" else "Filme",
+                    item.runtimeMinutes?.let { "$it min" },
+                    item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
+                ).forEach {
+                    Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
+                }
+            }
+
+            val overview = itemDetail?.overview
+            if (overview != null) {
+                AutoScrollText(
+                    text = overview,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.Text,
+                    modifier = Modifier.fillMaxWidth(0.55f).weight(1f, fill = false)
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
+                .height(76.dp),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            if (item == null) {
+                Text(
+                    text = "mdblist hub",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = HubColors.Text,
+                )
+                return@Column
+            }
+
             Text(
-                text = "mdblist hub",
+                text = item.title,
                 style = MaterialTheme.typography.headlineLarge,
                 color = HubColors.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            return@Column
-        }
-
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.headlineLarge,
-            color = HubColors.Text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            listOfNotNull(
-                item.year?.toString(),
-                if (item.type == MediaType.SHOW) "Série" else "Filme",
-                item.runtimeMinutes?.let { "$it min" },
-                item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
-            ).forEach {
-                Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                listOfNotNull(
+                    item.year?.toString(),
+                    if (item.type == MediaType.SHOW) "Série" else "Filme",
+                    item.runtimeMinutes?.let { "$it min" },
+                    item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
+                ).forEach {
+                    Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
+                }
             }
         }
     }
