@@ -16,6 +16,7 @@ data class MediaList(
     val itemCount: Int = 0,
     val dynamic: Boolean = false,
     val private: Boolean = false,
+    val hidden: Boolean = false,
     val updatedAt: String? = null,
 )
 

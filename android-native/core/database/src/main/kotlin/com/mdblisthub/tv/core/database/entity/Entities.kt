@@ -98,6 +98,7 @@ data class ListEntity(
     val itemCount: Int,
     val dynamic: Boolean,
     val private: Boolean,
+    val hidden: Boolean,
     val updatedAt: String?,
     val position: Int,
     val fetchedAt: Long,

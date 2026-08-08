@@ -113,6 +113,7 @@ fun DetailScreen(
     val coroutineScope = rememberCoroutineScope()
     var buttonRowHadFocus by remember { mutableStateOf(false) }
     var buttonRowHasFocus by remember { mutableStateOf(false) }
+    var trailerOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(buttonRowHasFocus) {
         if (buttonRowHasFocus) {
@@ -161,7 +162,11 @@ fun DetailScreen(
     }
 
     BackHandler {
-        if (castBio.member != null) viewModel.closeCast() else onBack()
+        when {
+            trailerOpen -> trailerOpen = false
+            castBio.member != null -> viewModel.closeCast()
+            else -> onBack()
+        }
     }
 
     val current = detail
@@ -264,10 +269,10 @@ fun DetailScreen(
                             },
                             modifier = Modifier.fillMaxHeight(),
                         )
-                        if (current.trailerKey != null) {
+                        if (current.trailerKey != null || current.imdbId != null) {
                             HubButton(
                                 text = "Trailer",
-                                onClick = { openTrailer(context, current.trailerKey!!) },
+                                onClick = { trailerOpen = true },
                                 modifier = Modifier.fillMaxHeight(),
                             )
                         }
@@ -374,6 +379,20 @@ fun DetailScreen(
                 member = member,
                 state = castBio,
                 onDismiss = viewModel::closeCast,
+            )
+        }
+
+        if (trailerOpen) {
+            TrailerOverlay(
+                imdbId = current.imdbId,
+                youtubeKey = current.trailerKey,
+                title = current.title,
+                trailers = graph.trailers,
+                onDismiss = { trailerOpen = false },
+                onOpenExternally = {
+                    trailerOpen = false
+                    current.trailerKey?.let { key -> openTrailer(context, key) }
+                },
             )
         }
     }

@@ -32,18 +32,6 @@ private val HubTypography = Typography(
     labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.8.sp),
 )
 
-private val HubColorScheme = darkColorScheme(
-    primary = HubColors.Accent,
-    onPrimary = HubColors.Text,
-    secondary = HubColors.Accent2,
-    background = HubColors.Background,
-    onBackground = HubColors.Text,
-    surface = HubColors.Surface,
-    onSurface = HubColors.Text,
-    surfaceVariant = HubColors.SurfaceStrong,
-    border = HubColors.Border,
-)
-
 /** Overscan inset. TVs still crop the edges, and Kodi budgets for it too. */
 object HubDimens {
     val ScreenPaddingHorizontal = 48.dp
@@ -56,7 +44,18 @@ object HubDimens {
 
 @Composable
 fun HubTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = HubColorScheme, typography = HubTypography) {
+    val colorScheme = darkColorScheme(
+        primary = HubColors.Accent,
+        onPrimary = HubColors.Text,
+        secondary = HubColors.Accent2,
+        background = HubColors.Background,
+        onBackground = HubColors.Text,
+        surface = HubColors.Surface,
+        onSurface = HubColors.Text,
+        surfaceVariant = HubColors.SurfaceStrong,
+        border = HubColors.Border,
+    )
+    MaterialTheme(colorScheme = colorScheme, typography = HubTypography) {
         Box(Modifier.fillMaxSize().background(HubColors.Background)) { content() }
     }
 }

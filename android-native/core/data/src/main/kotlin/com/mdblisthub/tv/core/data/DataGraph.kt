@@ -10,6 +10,7 @@ import com.mdblisthub.tv.core.data.repository.MediaRepository
 import com.mdblisthub.tv.core.data.repository.PlaybackRepository
 import com.mdblisthub.tv.core.data.repository.RecommendationsRepository
 import com.mdblisthub.tv.core.data.repository.StreamsRepository
+import com.mdblisthub.tv.core.data.repository.TrailerRepository
 import com.mdblisthub.tv.core.data.repository.WikipediaRepository
 import com.mdblisthub.tv.core.data.work.ImageWarmer
 import com.mdblisthub.tv.core.data.work.MetadataScheduler
@@ -42,12 +43,13 @@ class DataGraph(context: Context) {
     val auth = AuthRepository(network.mdblist, session, database)
     val lists = ListsRepository(network.mdblist, session, database)
     val media = MediaRepository(network.tmdb, network.mdblist, network.omdb, session, database)
-    val addons = AddonsRepository(network.stremio, database)
-    val streams = StreamsRepository(network.stremio, addons)
+    val addons = AddonsRepository(network.stremio, network.stremioInstall, database)
+    val streams = StreamsRepository(network.stremio, addons, network.addonClient)
     val library = LibraryRepository(network.mdblist, session, database)
     val playback = PlaybackRepository(network.mdblist, session, database, media)
     val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, session, addons, scope)
     val wikipedia = WikipediaRepository(network.wikipedia)
+    val trailers = TrailerRepository(network.imdb)
     val recommendations = RecommendationsRepository(network.mdblist, network.tmdb, media, session)
 
     val scheduler = MetadataScheduler(appContext)

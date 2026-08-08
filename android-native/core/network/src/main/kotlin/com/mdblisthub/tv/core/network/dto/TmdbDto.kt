@@ -179,3 +179,12 @@ data class TmdbReleaseCountryDto(
 
 @Serializable
 data class TmdbReleaseDateDto(val certification: String = "")
+
+@Serializable
+data class TmdbKeywordPageDto(val results: List<TmdbKeywordDto> = emptyList())
+
+@Serializable
+data class TmdbKeywordDto(
+    val id: Int = 0,
+    val name: String = "",
+)

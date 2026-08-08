@@ -23,6 +23,9 @@ interface ListDao {
     @Upsert
     suspend fun upsertLists(lists: List<ListEntity>)
 
+    @Query("UPDATE lists SET hidden = :hidden WHERE id = :listId")
+    suspend fun updateHidden(listId: Long, hidden: Boolean)
+
     @Query("DELETE FROM lists WHERE id NOT IN (:keep)")
     suspend fun deleteListsMissingFrom(keep: List<Long>)
 

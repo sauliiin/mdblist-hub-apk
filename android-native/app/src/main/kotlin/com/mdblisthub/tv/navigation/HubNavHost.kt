@@ -20,10 +20,12 @@ import com.mdblisthub.tv.ui.detail.DetailScreen
 import com.mdblisthub.tv.ui.home.HomeScreen
 import com.mdblisthub.tv.ui.login.LoginScreen
 import com.mdblisthub.tv.ui.player.PlayerScreen
+import com.mdblisthub.tv.ui.search.SearchScreen
 
 object Routes {
     const val LOGIN = "login"
     const val HOME = "home"
+    const val SEARCH = "search"
     const val ADDONS = "addons"
     const val DETAIL = "detail/{type}/{tmdbId}"
     const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}"
@@ -72,6 +74,7 @@ fun HubNavHost(graph: DataGraph) {
             HomeScreen(
                 graph = graph,
                 onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) },
+                onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
                 onResume = { point ->
                     navController.navigate(
@@ -88,6 +91,13 @@ fun HubNavHost(graph: DataGraph) {
 
         composable(Routes.ADDONS) {
             AddonsScreen(graph = graph, onBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.SEARCH) {
+            SearchScreen(
+                graph = graph,
+                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) }
+            )
         }
 
         composable(

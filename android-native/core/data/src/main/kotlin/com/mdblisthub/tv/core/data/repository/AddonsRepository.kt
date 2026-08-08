@@ -19,6 +19,12 @@ import kotlinx.coroutines.flow.map
  */
 class AddonsRepository(
     private val api: StremioApi,
+    /**
+     * Only [install] uses this. It is the same endpoints on a far more patient
+     * client, because a first request to a freshly configured addon URL can
+     * take tens of seconds where every later one takes milliseconds.
+     */
+    private val installApi: StremioApi,
     private val database: HubDatabase,
 ) {
     private val dao = database.addonDao()
@@ -34,11 +40,19 @@ class AddonsRepository(
     suspend fun install(rawUrl: String): Result<Addon> = runCatching {
         val base = Addon.normaliseUrl(rawUrl)
 
-        val manifest = runCatching { api.manifest("$base/manifest.json") }.getOrElse {
+        val manifest = runCatching { installApi.manifest("$base/manifest.json") }.getOrElse { cause ->
+            val timedOut = cause is java.io.InterruptedIOException ||
+                cause is java.net.SocketTimeoutException
             throw IllegalStateException(
-                "Não consegui ler o manifest. Confira a URL — e note que muitos addons geram " +
-                    "um endereço próprio para cada usuário na página de configuração; é esse " +
-                    "que precisa ser colado aqui, não o endereço do site.",
+                if (timedOut) {
+                    "O addon demorou demais para responder. Alguns levam quase um minuto na " +
+                        "primeira vez, enquanto validam a chave do debrid — tente de novo, " +
+                        "que a segunda costuma ser instantânea."
+                } else {
+                    "Não consegui ler o manifest. Confira a URL — e note que muitos addons geram " +
+                        "um endereço próprio para cada usuário na página de configuração; é esse " +
+                        "que precisa ser colado aqui, não o endereço do site."
+                },
             )
         }
 

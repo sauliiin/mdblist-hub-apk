@@ -16,9 +16,18 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
+    <!--
+        The video buffer is `byte[]` on the Java heap, not native memory, so
+        the default 128-256MB growth limit on a set-top box is what the player
+        actually has to fit inside. Without this the allocator, the artwork
+        cache and Compose together ran the heap out mid-film. The buffer is
+        still sized from the heap it really gets at runtime (see
+        `PlaybackController`) — this raises the ceiling, it does not assume one.
+    -->
     <application
         android:name=".HubApplication"
         android:allowBackup="true"
+        android:largeHeap="true"
         android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

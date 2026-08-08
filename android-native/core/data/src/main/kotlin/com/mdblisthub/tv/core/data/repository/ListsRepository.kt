@@ -53,11 +53,18 @@ class ListsRepository(
         val arranged = ListCatalog.arrange(api.lists(key), isOwner)
 
         listDao.upsertLists(
-            arranged.mapIndexed { index, (dto, displayName) -> dto.toEntity(displayName, index, now) },
+            arranged.mapIndexed { index, (dto, displayName) -> 
+                val existingHidden = existing.find { it.id == dto.id }?.hidden ?: false
+                dto.toEntity(displayName, index, now, existingHidden) 
+            },
         )
         // A list deleted upstream, or one that fell out of the curated set,
         // has to stop being a row here too.
         listDao.deleteListsMissingFrom(arranged.map { it.first.id })
+    }
+
+    suspend fun toggleVisibility(listId: Long, hidden: Boolean) = runCatching {
+        listDao.updateHidden(listId, hidden)
     }
 
     /**

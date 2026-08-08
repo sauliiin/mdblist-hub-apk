@@ -40,6 +40,11 @@ fun ExoVideoSurface(
                 // overlay out of it, which is both cheaper and the only path
                 // to HDR passthrough on most of them.
                 player = controller.player
+                // Nothing about playback sends the system a key event, so
+                // without this the box's own screensaver/sleep timer runs out
+                // from under a film that is still very much playing — the
+                // "app closes after a few minutes" this exists to prevent.
+                keepScreenOn = true
 
                 subtitleView?.apply {
                     // Bigger and yellow — legible from a couch over any
@@ -56,7 +61,7 @@ fun ExoVideoSurface(
                             Color.TRANSPARENT,
                             CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
                             Color.BLACK,
-                            Typeface.DEFAULT_BOLD,
+                            Typeface.DEFAULT,
                         ),
                     )
                     setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 26f)

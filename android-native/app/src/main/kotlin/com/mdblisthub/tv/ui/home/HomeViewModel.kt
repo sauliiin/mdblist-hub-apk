@@ -25,15 +25,43 @@ import kotlinx.coroutines.launch
 class HomeViewModel(private val graph: DataGraph) : ViewModel() {
 
     /**
+     * Rows are lazy and routinely leave composition while the user scrolls.
+     * Keeping one StateFlow per list preserves its last Room emission, so a
+     * row returning from above is full-sized immediately instead of briefly
+     * reappearing as an empty, zero-height item during focus search.
+     */
+    private val itemFlows = mutableMapOf<Long, StateFlow<List<MediaItem>>>()
+
+    private val _isEditMode = MutableStateFlow(false)
+    val isEditMode: StateFlow<Boolean> = _isEditMode.asStateFlow()
+
+    /**
      * Straight out of Room. The home paints on the first frame from whatever
      * the last sync left behind; the refresh below writes over it whenever it
      * finishes, and nothing on screen ever waits for the network.
      */
-    val lists: StateFlow<List<MediaList>> = graph.lists.observeLists()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val lists: StateFlow<List<MediaList>> = kotlinx.coroutines.flow.combine(graph.lists.observeLists(), _isEditMode) { lists, editMode ->
+        if (editMode) lists else lists.filter { !it.hidden }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val resumePoints: StateFlow<List<ResumePoint>> = graph.playback.resumePoints
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun toggleEditMode() {
+        _isEditMode.value = !_isEditMode.value
+    }
+
+    fun toggleListVisibility(list: MediaList) {
+        viewModelScope.launch {
+            graph.lists.toggleVisibility(list.id, !list.hidden)
+        }
+    }
+
+    fun itemsFor(listId: Long): StateFlow<List<MediaItem>> =
+        itemFlows.getOrPut(listId) {
+            graph.lists.observeItems(listId)
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }
 
     /** Drives the panel above the rows. */
     private val _focused = MutableStateFlow<MediaItem?>(null)

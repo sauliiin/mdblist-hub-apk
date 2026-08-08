@@ -9,6 +9,7 @@ import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -125,7 +126,26 @@ class PlayerViewModel(
             }
     }
 
-    fun selectSubtitle(option: SubtitleOption?) = controller.selectExternalSubtitle(option)
+    private var subtitleFetchJob: Job? = null
+
+    /**
+     * Downloads and parses the file before handing it to the controller,
+     * which only ever holds cues, never a URL — see `PlaybackController`.
+     * The previous request is cancelled outright rather than raced: a user
+     * who taps through three options quickly should only ever end up with
+     * the last one they actually meant.
+     */
+    fun selectSubtitle(option: SubtitleOption?) {
+        subtitleFetchJob?.cancel()
+        if (option == null) {
+            controller.selectExternalSubtitle(null, null)
+            return
+        }
+        subtitleFetchJob = viewModelScope.launch {
+            val track = graph.streams.subtitleTrack(option)
+            controller.selectExternalSubtitle(option, track)
+        }
+    }
 
     override fun onCleared() {
         val current = target

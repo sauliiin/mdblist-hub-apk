@@ -120,7 +120,15 @@ private fun RailRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .let {
+                val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 10.dp
+                it.clip(RoundedCornerShape(cornerRadius))
+                  .let { mod ->
+                      if (HubColors.isCyberpunk && focused) {
+                          mod.animatedCyberpunkGlow(shape = RoundedCornerShape(cornerRadius))
+                      } else mod
+                  }
+            }
             .background(background)
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
             .padding(horizontal = 14.dp, vertical = 12.dp),

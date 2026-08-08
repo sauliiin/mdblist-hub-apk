@@ -103,10 +103,23 @@ class FirebaseSyncRepository(
      * removed elsewhere is simply absent from the stored copy. Merging here
      * would read that absence as "nothing to add", and the deletion would
      * never arrive.
+     *
+     * An empty read is the one case that is *not* applied. It is ambiguous —
+     * a genuinely empty cloud list looks identical to a key that was never
+     * written, a partially-parsed payload, or a Firebase answer of `null` —
+     * and every one of those, replaced in, silently wipes a working set of
+     * addons and leaves nothing behind. Since the destructive reading is
+     * indistinguishable from the harmless one, the local list is kept and the
+     * caller is told why rather than guessing.
      */
     suspend fun pull(): Result<Int> = request {
         val key = requireKey()
         val remote = read(key)
+        check(remote.isNotEmpty()) {
+            "A nuvem não devolveu nenhum addon, então não mexi nos daqui. " +
+                "Use \"Enviar\" no aparelho que tem os addons certos primeiro."
+        }
+
         val before = addons.entities().size
         applyLocally { addons.replaceAll(remote) }
         kotlin.math.abs(remote.size - before)

@@ -63,6 +63,25 @@ object HttpClients {
         })
         .build()
 
+    /**
+     * Installing an addon, which is a different workload from using one.
+     *
+     * [addons] is tuned for fanning a title out over a dozen third-party hosts
+     * where one is always down, so giving up in twelve seconds is correct
+     * there. Installing is the opposite: one host, chosen deliberately, once.
+     * Several popular addons cold-start on the first request to a freshly
+     * configured URL — Torrentio validates the debrid key attached to it and
+     * has been measured taking over twenty seconds to answer, then answering
+     * in milliseconds forever after. Under the fan-out's timeout that first
+     * request is aborted, and the addon simply cannot be added at all.
+     */
+    fun addonInstall(base: OkHttpClient): OkHttpClient = base.newBuilder()
+        .cache(null)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .callTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     /** Never serve a stale answer for something the user just asked to refresh. */
     val NO_CACHE: CacheControl = CacheControl.Builder().noCache().noStore().build()
 }

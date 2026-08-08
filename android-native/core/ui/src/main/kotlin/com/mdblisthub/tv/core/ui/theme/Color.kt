@@ -7,20 +7,23 @@ import androidx.compose.ui.graphics.Color
  * a near-black field, one saturated accent for focus, and everything else in
  * greys so the artwork is the only colour on screen.
  */
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+
 object HubColors {
-    val Background = Color(0xFF07080C)
-    val Surface = Color(0xFF121620)
-    val SurfaceStrong = Color(0xFF1A1F2B)
-    val Border = Color(0xFF232A38)
+    var Background by mutableStateOf(Color(0xFF07080C))
+    var Surface by mutableStateOf(Color(0xFF121620))
+    var SurfaceStrong by mutableStateOf(Color(0xFF1A1F2B))
+    var Border by mutableStateOf(Color(0xFF232A38))
 
-    /** Focus. In a 10-foot UI this is the most important colour there is. */
-    val Accent = Color(0xFF7C5CFF)
-    val AccentSoft = Color(0xFFB6A5FF)
-    val Accent2 = Color(0xFF12D6C4)
+    var Accent by mutableStateOf(Color(0xFF7C5CFF))
+    var AccentSoft by mutableStateOf(Color(0xFFB6A5FF))
+    var Accent2 by mutableStateOf(Color(0xFF12D6C4))
 
-    val Text = Color(0xFFF2F4F8)
-    val TextDim = Color(0xFFA8B0C0)
-    val TextFaint = Color(0xFF6C7688)
+    var Text by mutableStateOf(Color(0xFFF2F4F8))
+    var TextDim by mutableStateOf(Color(0xFFA8B0C0))
+    var TextFaint by mutableStateOf(Color(0xFF6C7688))
 
     val Imdb = Color(0xFFF5C518)
     val Fresh = Color(0xFF34D399)
@@ -29,4 +32,34 @@ object HubColors {
     val Trakt = Color(0xFFED1C24)
     val Tmdb = Color(0xFF01B4E4)
     val Letterboxd = Color(0xFF00E054)
+
+    var isCyberpunk by mutableStateOf(false)
+
+    fun toggleCyberpunk() {
+        if (isCyberpunk) {
+            Background = Color(0xFF07080C)
+            Surface = Color(0xFF121620)
+            SurfaceStrong = Color(0xFF1A1F2B)
+            Border = Color(0xFF232A38)
+            Accent = Color(0xFF7C5CFF)
+            AccentSoft = Color(0xFFB6A5FF)
+            Accent2 = Color(0xFF12D6C4)
+            Text = Color(0xFFF2F4F8)
+            TextDim = Color(0xFFA8B0C0)
+            TextFaint = Color(0xFF6C7688)
+            isCyberpunk = false
+        } else {
+            Background = Color(0xFF050014)
+            Surface = Color(0xFF14002e)
+            SurfaceStrong = Color(0xFF2b005e)
+            Border = Color(0xFFff0055)
+            Accent = Color(0xFF00f3ff)
+            AccentSoft = Color(0xFF99faff)
+            Accent2 = Color(0xFFff00aa)
+            Text = Color(0xFFfff000)
+            TextDim = Color(0xFF00f3ff)
+            TextFaint = Color(0xFFff0055)
+            isCyberpunk = true
+        }
+    }
 }

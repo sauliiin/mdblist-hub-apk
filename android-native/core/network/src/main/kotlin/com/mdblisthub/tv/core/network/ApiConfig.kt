@@ -20,6 +20,9 @@ object ApiConfig {
     const val FIREBASE_BASE = "https://alien-bruin-339920-default-rtdb.firebaseio.com/"
     const val FIREBASE_ROOT = "mdblist-hub/addons"
 
+    /** IMDb's own (undocumented) GraphQL API — see [ImdbApi] for why it's worth using. */
+    const val IMDB_GRAPHQL_BASE = "https://graphql.prod.api.imdb.a2z.com/"
+
     const val TMDB_KEY = "703cf5598b9fd74adac824baf7923126"
     const val OMDB_KEY = "b2f2fcca"
 

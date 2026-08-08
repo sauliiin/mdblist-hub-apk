@@ -73,6 +73,10 @@ data class PlaybackState(
     val currentAudioId: Int = -1,
     val currentSubtitleId: Int = -1,
     val externalSubtitle: SubtitleOption? = null,
+    /** Signed subtitle shift: negative shows cues earlier, positive later. */
+    val subtitleOffsetMs: Long = 0,
+    /** The line an external subtitle is showing right now, or null for a gap. */
+    val activeSubtitleCue: String? = null,
     val scaleType: VideoScaleType = VideoScaleType.FIT,
     val error: String? = null,
 ) {

@@ -45,14 +45,19 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -61,8 +66,12 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -83,6 +92,8 @@ import kotlinx.coroutines.delay
 
 private const val OSD_TIMEOUT_MS = 4_000L
 private const val SEEK_STEP_MS = 10_000L
+private const val SUBTITLE_OFFSET_STEP_MS = 100L
+private const val FOCUS_RESTORE_ATTEMPTS = 3
 
 @Composable
 fun PlayerScreen(
@@ -114,7 +125,9 @@ fun PlayerScreen(
      */
     var osdExpired by remember { mutableStateOf(false) }
     var subtitlePickerOpen by remember { mutableStateOf(false) }
+    var subtitleSyncOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
+    val overlayOpen = subtitlePickerOpen || subtitleSyncOpen || audioPickerOpen
     // Whether one of the OSD buttons currently holds focus. While it does,
     // left/right have to move focus between the buttons instead of seeking —
     // see the key handler below.
@@ -139,20 +152,23 @@ fun PlayerScreen(
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    // Runs after the OSD (and its Play button) has actually composed, which
-    // is why this can't happen inline in the key handler below.
-    LaunchedEffect(osdVisible, wantsPlayFocus) {
-        if (osdVisible && wantsPlayFocus) {
-            playButtonFocusRequester.requestFocus()
-            wantsPlayFocus = false
+    // Closing a picker and re-composing the OSD happen in the same snapshot.
+    // Wait a frame so the picker's disappearing focus target cannot clear the
+    // new Play focus afterwards. Only consume the intent once Compose reports
+    // that the newly attached button accepted focus.
+    LaunchedEffect(osdVisible, wantsPlayFocus, playback.canShowVideo, overlayOpen) {
+        if (!osdVisible || !wantsPlayFocus || !playback.canShowVideo || overlayOpen) {
+            return@LaunchedEffect
         }
-    }
-
-    BackHandler {
-        when {
-            subtitlePickerOpen -> subtitlePickerOpen = false
-            audioPickerOpen -> audioPickerOpen = false
-            else -> onBack()
+        repeat(FOCUS_RESTORE_ATTEMPTS) {
+            withFrameNanos { }
+            if (!osdVisible || !wantsPlayFocus || !playback.canShowVideo || overlayOpen) {
+                return@LaunchedEffect
+            }
+            if (playButtonFocusRequester.requestFocus(FocusDirection.Enter)) {
+                wantsPlayFocus = false
+                return@LaunchedEffect
+            }
         }
     }
 
@@ -166,6 +182,35 @@ fun PlayerScreen(
 
     fun hideNow() { osdExpired = true }
 
+    BackHandler {
+        when {
+            subtitleSyncOpen -> {
+                subtitleSyncOpen = false
+                subtitlePickerOpen = true
+                poke()
+            }
+            subtitlePickerOpen -> {
+                subtitlePickerOpen = false
+                wantsPlayFocus = true
+                poke()
+            }
+            audioPickerOpen -> {
+                audioPickerOpen = false
+                wantsPlayFocus = true
+                poke()
+            }
+            // The OSD is up because something just woke it, not because the
+            // film is paused — `osdVisible` alone would also be true while
+            // paused (see its definition above), and gating on that would
+            // trap back behind an OSD that never auto-hides. Playing is what
+            // makes this "still watching, just glanced at the controls"
+            // rather than "stopped and looking at a screen with a back
+            // button on it".
+            osdVisible && playback.isPlaying -> hideNow()
+            else -> onBack()
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -174,6 +219,24 @@ fun PlayerScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                // Nothing to seek, toggle or wake an OSD for without a video
+                // — and this handler sits on the root Box, an ancestor of
+                // everything including `FailureVeil`, so left unconditional
+                // it swallows Enter/Left/Right before they ever reach the
+                // "Ver addons"/"Voltar" buttons on a failed playback. Every
+                // key falls through untouched so Compose's own focus
+                // traversal and click handling run instead.
+                if (!playback.canShowVideo) return@onPreviewKeyEvent false
+                // Pickers and the sync panel own the remote while they are
+                // open. In particular, OK must activate their focused row —
+                // never fall through to the player's play/pause shortcut.
+                if (overlayOpen) return@onPreviewKeyEvent event.key != Key.Back
+                // Back has its own handler below, and it needs to be able to
+                // *hide* the OSD — which an unconditional poke() here would
+                // undo in the same keypress, since this preview handler runs
+                // first and would re-wake it right before (or after)
+                // `BackHandler` puts it away.
+                if (event.key == Key.Back) return@onPreviewKeyEvent false
                 // Read before the poke() below moves it, so this still
                 // reflects whether the OSD was hidden *before* this press.
                 val wasHidden = !osdVisible
@@ -272,6 +335,7 @@ fun PlayerScreen(
         if (playback.phase == PlaybackPhase.FAILED || ui.noAddons || ui.missingImdbId) {
             FailureVeil(
                 backdropUrl = ui.backdropUrl,
+                title = "Não deu para reproduzir",
                 message = when {
                     ui.noAddons -> "Nenhum addon instalado. É de um addon que saem as fontes."
                     ui.missingImdbId ->
@@ -284,7 +348,32 @@ fun PlayerScreen(
             )
         }
 
-        if (osdVisible && playback.canShowVideo) {
+        // `canShowVideo` deliberately excludes ENDED — without a veil here the
+        // OSD (which does too) simply disappears the moment a film finishes,
+        // leaving a black screen with no visible way off it.
+        if (playback.phase == PlaybackPhase.ENDED) {
+            FailureVeil(
+                backdropUrl = ui.backdropUrl,
+                title = "Fim",
+                message = ui.title,
+                showAddons = false,
+                onOpenAddons = onOpenAddons,
+                onBack = onBack,
+            )
+        }
+
+        // Independent of the OSD gradient: a caption still belongs on screen
+        // while the controls are hidden, which is most of a film's runtime.
+        val subtitleCue = playback.activeSubtitleCue
+        if (playback.canShowVideo && !overlayOpen && !subtitleCue.isNullOrBlank()) {
+            ExternalSubtitleOverlay(
+                text = subtitleCue,
+                liftForOsd = osdVisible,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        if (osdVisible && playback.canShowVideo && !overlayOpen) {
             PlayerOsd(
                 title = ui.title,
                 subtitle = ui.episodeLabel,
@@ -308,12 +397,36 @@ fun PlayerScreen(
         SubtitlePickerOverlay(
             options = ui.subtitles,
             active = playback.externalSubtitle,
+            offsetMs = playback.subtitleOffsetMs,
+            onOpenSync = {
+                subtitlePickerOpen = false
+                subtitleSyncOpen = true
+                hideNow()
+            },
             onSelect = { option ->
                 viewModel.selectSubtitle(option)
                 subtitlePickerOpen = false
+                wantsPlayFocus = true
                 poke()
             },
-            onDismiss = { subtitlePickerOpen = false },
+            onDismiss = {
+                subtitlePickerOpen = false
+                wantsPlayFocus = true
+                poke()
+            },
+        )
+    }
+
+    if (subtitleSyncOpen && playback.externalSubtitle != null) {
+        SubtitleSyncOverlay(
+            offsetMs = playback.subtitleOffsetMs,
+            onAdjust = viewModel.controller::adjustSubtitleOffset,
+            onReset = viewModel.controller::resetSubtitleOffset,
+            onDismiss = {
+                subtitleSyncOpen = false
+                wantsPlayFocus = true
+                poke()
+            },
         )
     }
 
@@ -324,9 +437,14 @@ fun PlayerScreen(
             onSelect = { id ->
                 viewModel.controller.selectAudioTrack(id)
                 audioPickerOpen = false
+                wantsPlayFocus = true
                 poke()
             },
-            onDismiss = { audioPickerOpen = false },
+            onDismiss = {
+                audioPickerOpen = false
+                wantsPlayFocus = true
+                poke()
+            },
         )
     }
 }
@@ -382,11 +500,18 @@ private fun ResolvingVeil(
 @Composable
 private fun FailureVeil(
     backdropUrl: String?,
+    title: String,
     message: String,
     showAddons: Boolean,
     onOpenAddons: () -> Unit,
     onBack: () -> Unit,
 ) {
+    // Without this the D-pad has nothing focused to move from, since the
+    // only thing that ever claimed focus was the player screen's own root
+    // Box underneath this veil.
+    val primaryFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { primaryFocus.requestFocus() }
+
     Box(Modifier.fillMaxSize()) {
         FanartBackdrop(url = backdropUrl, scrim = 0.94f)
 
@@ -396,7 +521,7 @@ private fun FailureVeil(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Não deu para reproduzir",
+                text = title,
                 style = MaterialTheme.typography.headlineLarge,
                 color = HubColors.Text,
             )
@@ -410,11 +535,58 @@ private fun FailureVeil(
             )
             Spacer(Modifier.height(26.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (showAddons) HubButton("Ver addons", onOpenAddons, primary = true)
-                HubButton("Voltar", onBack)
+                if (showAddons) {
+                    HubButton(
+                        "Ver addons",
+                        onOpenAddons,
+                        modifier = Modifier.focusRequester(primaryFocus),
+                        primary = true,
+                    )
+                    HubButton("Voltar", onBack)
+                } else {
+                    HubButton("Voltar", onBack, modifier = Modifier.focusRequester(primaryFocus))
+                }
             }
         }
     }
+}
+
+/**
+ * The external subtitle's current line, drawn by this app rather than handed
+ * to ExoPlayer as a side-loaded track — see `PlaybackController`. Owning the
+ * draw is what let synchronizing become a pure UI operation: adjusting the
+ * offset changes which cue this reads on the next tick, nothing about the
+ * film underneath it.
+ *
+ * Styled to match the embedded-subtitle look this app already forces on
+ * container subtitles (`ExoVideoSurface`) — yellow, drop shadow, no
+ * background — so a title with an addon subtitle and one with an embedded
+ * one read as the same feature.
+ */
+@Composable
+private fun ExternalSubtitleOverlay(
+    text: String,
+    liftForOsd: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val bottomPadding by animateDpAsState(
+        if (liftForOsd) 168.dp else 40.dp,
+        focusTween(),
+        label = "subtitle-lift",
+    )
+    Text(
+        text = text,
+        modifier = modifier
+            .padding(horizontal = 32.dp)
+            .padding(bottom = bottomPadding)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        color = Color.Yellow,
+        fontSize = 26.sp,
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.bodyLarge.copy(
+            shadow = Shadow(color = Color.Black, offset = Offset(2f, 2f), blurRadius = 6f),
+        ),
+    )
 }
 
 @Composable
@@ -654,6 +826,8 @@ private fun <T> focusTween(): FiniteAnimationSpec<T> = tween(durationMillis = 20
 private fun SubtitlePickerOverlay(
     options: List<SubtitleOption>,
     active: SubtitleOption?,
+    offsetMs: Long,
+    onOpenSync: () -> Unit,
     onSelect: (SubtitleOption?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -693,11 +867,32 @@ private fun SubtitlePickerOverlay(
             )
 
             LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                item(key = "sync") {
+                    SubtitleRow(
+                        label = if (active == null) {
+                            "Sincronizar legenda — selecione uma legenda"
+                        } else {
+                            "Sincronizar legenda  ${formatSubtitleOffset(offsetMs)}"
+                        },
+                        selected = offsetMs != 0L,
+                        enabled = active != null,
+                        modifier = if (active != null) {
+                            Modifier.focusRequester(firstRowFocus)
+                        } else {
+                            Modifier
+                        },
+                        onClick = onOpenSync,
+                    )
+                }
                 item(key = "none") {
                     SubtitleRow(
                         label = "Sem legenda",
                         selected = active == null,
-                        modifier = Modifier.focusRequester(firstRowFocus),
+                        modifier = if (active == null) {
+                            Modifier.focusRequester(firstRowFocus)
+                        } else {
+                            Modifier
+                        },
                         onClick = { onSelect(null) },
                     )
                 }
@@ -719,6 +914,7 @@ private fun SubtitleRow(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -726,10 +922,15 @@ private fun SubtitleRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
             .background(
                 when {
-                    focused -> HubColors.Accent.copy(alpha = 0.3f)
+                    focused && enabled -> HubColors.Accent.copy(alpha = 0.3f)
                     selected -> HubColors.Accent.copy(alpha = 0.14f)
                     else -> HubColors.Background.copy(alpha = 0f)
                 }
@@ -739,8 +940,102 @@ private fun SubtitleRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
-            color = if (focused || selected) HubColors.AccentSoft else HubColors.TextDim,
+            color = when {
+                !enabled -> HubColors.TextFaint
+                focused || selected -> HubColors.AccentSoft
+                else -> HubColors.TextDim
+            },
         )
+    }
+}
+
+/**
+ * Kept at the top so the film and its captions remain visible while the user
+ * nudges timing with the remote. The picker closes before this opens; there
+ * is deliberately no dark scrim over the video to judge synchronization
+ * against.
+ */
+@Composable
+private fun SubtitleSyncOverlay(
+    offsetMs: Long,
+    onAdjust: (Long) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val firstButtonFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { firstButtonFocus.requestFocus() }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            // A pointer-only dismiss layer: `clickable` would make this
+            // full-screen transparent box an invisible D-pad focus target.
+            .pointerInput(onDismiss) { detectTapGestures(onTap = { onDismiss() }) },
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 28.dp)
+                .widthIn(max = 640.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(HubColors.Surface.copy(alpha = 0.96f))
+                .border(1.dp, HubColors.Border, RoundedCornerShape(14.dp))
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(horizontal = 22.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Sincronizar legenda",
+                style = MaterialTheme.typography.titleLarge,
+                color = HubColors.Text,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = formatSubtitleOffset(offsetMs),
+                style = MaterialTheme.typography.headlineMedium,
+                color = if (offsetMs == 0L) HubColors.Text else HubColors.AccentSoft,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            Text(
+                text = "Negativo adianta  •  positivo atrasa",
+                style = MaterialTheme.typography.labelSmall,
+                color = HubColors.TextDim,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.onPreviewKeyEvent { event ->
+                    // There is intentionally nowhere above or below this
+                    // compact popup for focus to go. Consuming the vertical
+                    // directions prevents it escaping to the player root.
+                    event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.DirectionUp || event.key == Key.DirectionDown)
+                },
+            ) {
+                HubButton(
+                    text = "−0,1 s",
+                    onClick = { onAdjust(-SUBTITLE_OFFSET_STEP_MS) },
+                    modifier = Modifier
+                        .focusRequester(firstButtonFocus)
+                        .onPreviewKeyEvent { event ->
+                            event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft
+                        },
+                )
+                // Keep this focusable at zero: disabling the currently
+                // focused button after a reset leaves a TV remote with no
+                // focus anchor for the next left/right press.
+                HubButton(text = "Zerar", onClick = onReset)
+                HubButton(text = "+0,1 s", onClick = { onAdjust(SUBTITLE_OFFSET_STEP_MS) })
+                HubButton(
+                    text = "Concluir",
+                    onClick = onDismiss,
+                    modifier = Modifier.onPreviewKeyEvent { event ->
+                        event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight
+                    },
+                    primary = true,
+                )
+            }
+        }
     }
 }
 
@@ -809,4 +1104,11 @@ private fun formatTime(ms: Long): String {
     } else {
         String.format(java.util.Locale.US, "%d:%02d", minutes, seconds)
     }
+}
+
+private fun formatSubtitleOffset(ms: Long): String {
+    if (ms == 0L) return "0,0 s"
+    val sign = if (ms < 0L) "−" else "+"
+    val tenths = (kotlin.math.abs(ms) + 50L) / 100L
+    return "$sign${tenths / 10L},${tenths % 10L} s"
 }

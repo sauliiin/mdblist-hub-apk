@@ -52,6 +52,29 @@ interface TmdbApi {
         @Query("page") page: Int,
     ): TmdbPageDto
 
+    @GET("search/keyword")
+    suspend fun searchKeyword(
+        @Query("api_key") apiKey: String,
+        @Query("query") query: String,
+        @Query("page") page: Int = 1,
+    ): com.mdblisthub.tv.core.network.dto.TmdbKeywordPageDto
+
+    @GET("discover/movie")
+    suspend fun discoverMovie(
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String,
+        @Query("with_keywords") keywords: String,
+        @Query("page") page: Int = 1,
+    ): TmdbPageDto
+
+    @GET("discover/tv")
+    suspend fun discoverTv(
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String,
+        @Query("with_keywords") keywords: String,
+        @Query("page") page: Int = 1,
+    ): TmdbPageDto
+
     companion object {
         const val DETAIL_APPEND =
             "credits,aggregate_credits,external_ids,videos,recommendations,images,content_ratings,release_dates"

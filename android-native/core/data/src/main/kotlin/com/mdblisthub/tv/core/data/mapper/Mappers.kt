@@ -44,7 +44,7 @@ fun MdbUserDto.toDomain(): HubUser = HubUser(
 
 // ----------------------------------------------------------------- lists
 
-fun MdbListDto.toEntity(displayName: String, position: Int, now: Long) = ListEntity(
+fun MdbListDto.toEntity(displayName: String, position: Int, now: Long, hidden: Boolean = false) = ListEntity(
     id = id,
     name = displayName,
     originalName = name,
@@ -54,6 +54,7 @@ fun MdbListDto.toEntity(displayName: String, position: Int, now: Long) = ListEnt
     itemCount = items,
     dynamic = dynamic,
     private = private,
+    hidden = hidden,
     updatedAt = lastUpdatedAt,
     position = position,
     fetchedAt = now,
@@ -69,6 +70,7 @@ fun ListEntity.toDomain() = MediaList(
     itemCount = itemCount,
     dynamic = dynamic,
     private = private,
+    hidden = hidden,
     updatedAt = updatedAt,
 )
 

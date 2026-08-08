@@ -33,6 +33,10 @@ fun FanartBackdrop(
     // artwork barely read as a photo — lowered so it actually shows.
     scrim: Float = 0.3f,
 ) {
+    val actualScrim = if (HubColors.isCyberpunk) scrim * 0.3f else scrim
+    val baseVerticalAlpha1 = if (HubColors.isCyberpunk) 0.1f else 0.35f
+    val baseVerticalAlpha2 = if (HubColors.isCyberpunk) 0.2f else 0.5f
+
     Box(modifier.fillMaxSize().background(HubColors.Background)) {
         Crossfade(
             targetState = url,
@@ -57,9 +61,9 @@ fun FanartBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        0f to HubColors.Background.copy(alpha = scrim),
-                        0.55f to HubColors.Background.copy(alpha = scrim * 0.78f),
-                        1f to HubColors.Background.copy(alpha = scrim * 0.5f),
+                        0f to HubColors.Background.copy(alpha = actualScrim),
+                        0.55f to HubColors.Background.copy(alpha = actualScrim * 0.78f),
+                        1f to HubColors.Background.copy(alpha = actualScrim * 0.5f),
                     )
                 )
         )
@@ -68,8 +72,8 @@ fun FanartBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to HubColors.Background.copy(alpha = 0.35f),
-                        0.45f to HubColors.Background.copy(alpha = 0.5f),
+                        0f to HubColors.Background.copy(alpha = baseVerticalAlpha1),
+                        0.45f to HubColors.Background.copy(alpha = baseVerticalAlpha2),
                         1f to HubColors.Background,
                     )
                 )
