@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "862741916290",
+    "project_id": "safevault-fcbdc",
+    "storage_bucket": "safevault-fcbdc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:862741916290:android:d20ef0e467ecfc90d2e29b",
+        "android_client_info": {
+          "package_name": "mdblist_hub.apk.S84"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJ4LJ7EjqZgp3hif6kp5kjBA5g0oacef4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

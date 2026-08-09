@@ -87,6 +87,13 @@ data class PlaybackState(
      * sources while the automatic attempt still has a chance to work.
      */
     val availableSources: List<PlayableStream> = emptyList(),
+    /**
+     * The candidate the current attempt is playing — set the moment it is
+     * handed to the player, before it is known to actually work. This is
+     * what lets a subtitle be matched against the release that is playing:
+     * see `SubtitleMatcher`.
+     */
+    val activeStream: PlayableStream? = null,
 ) {
     val isPlaying: Boolean get() = phase == PlaybackPhase.PLAYING
     val canShowVideo: Boolean

@@ -45,7 +45,9 @@ class DataGraph(context: Context) {
     val lists = ListsRepository(network.mdblist, session, database)
     val media = MediaRepository(network.tmdb, network.mdblist, network.omdb, session, database)
     val addons = AddonsRepository(network.stremio, network.stremioInstall, database)
-    val streams = StreamsRepository(network.stremio, addons, network.addonClient)
+    val streams = StreamsRepository(
+        network.stremio, addons, network.addonClient, network.openSubtitles, network.wyzie,
+    )
     val library = LibraryRepository(network.mdblist, session, database)
     val playback = PlaybackRepository(network.mdblist, session, database, media)
     val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, session, addons, scope)

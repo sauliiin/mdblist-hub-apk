@@ -348,14 +348,17 @@ private fun AutoScrollText(
     val scrollState = androidx.compose.foundation.rememberScrollState()
     LaunchedEffect(text) {
         scrollState.scrollTo(0)
-        kotlinx.coroutines.delay(3000)
+        kotlinx.coroutines.delay(4000)
         while (isActive) {
             val max = scrollState.maxValue
             if (max > 0) {
-                scrollState.animateScrollTo(max, animationSpec = androidx.compose.animation.core.tween(durationMillis = max * 40, easing = androidx.compose.animation.core.LinearEasing))
+                // 80ms/px rather than 40 — at the old speed a long synopsis
+                // read as a blur scrolling past, not text anyone could
+                // actually read while glancing at the hero panel.
+                scrollState.animateScrollTo(max, animationSpec = androidx.compose.animation.core.tween(durationMillis = max * 80, easing = androidx.compose.animation.core.LinearEasing))
+                kotlinx.coroutines.delay(4000)
+                scrollState.animateScrollTo(0, animationSpec = androidx.compose.animation.core.tween(durationMillis = 800))
                 kotlinx.coroutines.delay(3000)
-                scrollState.animateScrollTo(0, animationSpec = androidx.compose.animation.core.tween(durationMillis = 500))
-                kotlinx.coroutines.delay(2000)
             } else {
                 kotlinx.coroutines.delay(1000)
             }
