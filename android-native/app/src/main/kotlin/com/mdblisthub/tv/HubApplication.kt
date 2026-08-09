@@ -14,6 +14,9 @@ import coil3.request.crossfade
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.work.HubWorkerFactory
 import com.mdblisthub.tv.core.data.work.ImageWarmer
+import com.mdblisthub.tv.core.model.HubThemeVariant
+import com.mdblisthub.tv.core.ui.theme.HubColors
+import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toOkioPath
 
 class HubApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -24,6 +27,18 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
     override fun onCreate() {
         super.onCreate()
         graph = DataGraph(this)
+
+        // Read before the first frame rather than collected into composition.
+        // The palette is global state that composition reads on its very first
+        // pass, so letting DataStore deliver it asynchronously means every
+        // cold start paints one frame in the default theme and then flips —
+        // a visible flash on every launch, for someone who is not on Normal.
+        // One small preferences file is the cheaper side of that trade, and
+        // failing to read it is never worth blocking a start over.
+        HubColors.apply(
+            runCatching { runBlocking { graph.uiPreferences.currentTheme() } }
+                .getOrDefault(HubThemeVariant.NORMAL),
+        )
 
         // Assigned after the graph exists, because the loader shares its
         // OkHttp client — one connection pool for artwork and metadata alike.

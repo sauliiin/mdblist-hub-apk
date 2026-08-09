@@ -2,7 +2,11 @@ package com.mdblisthub.tv.core.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,12 +28,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -150,6 +157,12 @@ fun PosterCard(
 /** Shared by every focus-driven property on the card, so they move as one. */
 private fun <T> posterFocusTween() = tween<T>(durationMillis = 200, easing = FastOutSlowInEasing)
 
+/**
+ * Hoisted out of [ScoreBadge]: `forLanguageTag` parses the tag every call, and
+ * the badge is drawn once per visible card in every row on the home screen.
+ */
+private val ScoreLocale: java.util.Locale = java.util.Locale.forLanguageTag("pt-BR")
+
 @Composable
 private fun ScoreBadge(score: Int, modifier: Modifier = Modifier) {
     val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 6.dp
@@ -165,94 +178,127 @@ private fun ScoreBadge(score: Int, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = (score / 10.0).let { String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f", it) },
+            text = remember(score) { String.format(ScoreLocale, "%.1f", score / 10.0) },
             style = MaterialTheme.typography.labelSmall,
             color = HubColors.Imdb,
         )
     }
 }
 
-fun Modifier.animatedCyberpunkGlow(
-    shape: androidx.compose.ui.graphics.Shape = androidx.compose.ui.graphics.RectangleShape
-) = composed {
-    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "glow_rot")
-    val rotation by infiniteTransition.animateFloat(
+/**
+ * The sweep's colours, as packed ARGB ints.
+ *
+ * Hoisted because these used to be three `Color.parseColor("#…")` calls
+ * *inside* the draw — three string parses per frame, sixty times a second,
+ * for a value that has never changed.
+ */
+private val CyberpunkGlowColors = intArrayOf(
+    0xFF9D00FF.toInt(),
+    0xFF00F3FF.toInt(),
+    0xFF9D00FF.toInt(),
+)
+
+/**
+ * The rotating neon halo the cyberpunk theme puts behind a focused card.
+ *
+ * Everything expensive — the shader, the two blur filters, the three paints
+ * and the shape's outline — is built once per size in [drawWithCache] and
+ * then reused; only the rotation changes per frame, and it is applied by
+ * mutating the shader's local matrix in place. A focused card therefore costs
+ * no allocations per frame, where it used to cost ten: a `SweepGradient`, a
+ * `Matrix`, three `Paint`s, two `BlurMaskFilter`s and three parsed colour
+ * strings, all discarded sixty times a second on a box whose GC has very
+ * little headroom to spare.
+ *
+ * `@Composable` rather than `composed { }` for a related reason: `composed`
+ * is opaque to Compose's modifier comparison, so it re-materialises on every
+ * recomposition of every card using it.
+ *
+ * The paints are `android.graphics.Paint` directly rather than Compose paints
+ * unwrapped with `asFrameworkPaint()`, which is deprecated — the draw was
+ * already going through `nativeCanvas` for the rounded case, so this only
+ * makes the other two branches agree with it.
+ */
+@Composable
+fun Modifier.animatedCyberpunkGlow(shape: Shape = RectangleShape): Modifier {
+    val infiniteTransition = rememberInfiniteTransition(label = "glow_rot")
+    // Deliberately not delegated with `by`: a delegated read would happen
+    // inside the cache block below and invalidate it every frame, rebuilding
+    // precisely the objects the cache exists to keep. It is read in the draw
+    // instead, which is the only place it changes anything.
+    val rotation = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(3000, easing = androidx.compose.animation.core.LinearEasing),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "glow_rot_anim"
+        label = "glow_rot_anim",
     )
 
-    this.drawBehind {
-        val colorsInt = intArrayOf(
-            android.graphics.Color.parseColor("#9D00FF"),
-            android.graphics.Color.parseColor("#00F3FF"),
-            android.graphics.Color.parseColor("#9D00FF")
-        )
-        val shader = android.graphics.SweepGradient(size.width / 2f, size.height / 2f, colorsInt, null)
+    return this.drawWithCache {
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+        val shader = android.graphics.SweepGradient(centerX, centerY, CyberpunkGlowColors, null)
         val matrix = android.graphics.Matrix()
-        matrix.postRotate(rotation, size.width / 2f, size.height / 2f)
-        shader.setLocalMatrix(matrix)
 
-        val paint1 = androidx.compose.ui.graphics.Paint().apply {
-            asFrameworkPaint().apply {
+        // One shader behind all three paints, as before: rotating it moves the
+        // outer halo, the inner bloom and the border as a single piece.
+        // Anti-aliasing is set explicitly because a bare framework `Paint`
+        // defaults to off, where the Compose `Paint` these replaced had it on.
+        val paints = arrayOf(
+            android.graphics.Paint().apply {
+                isAntiAlias = true
                 this.shader = shader
                 maskFilter = android.graphics.BlurMaskFilter(
                     16.dp.toPx() * 1.5f,
-                    android.graphics.BlurMaskFilter.Blur.NORMAL
+                    android.graphics.BlurMaskFilter.Blur.NORMAL,
                 )
-            }
-        }
-        val paint2 = androidx.compose.ui.graphics.Paint().apply {
-            asFrameworkPaint().apply {
+            },
+            android.graphics.Paint().apply {
+                isAntiAlias = true
                 this.shader = shader
                 maskFilter = android.graphics.BlurMaskFilter(
                     16.dp.toPx() * 0.5f,
-                    android.graphics.BlurMaskFilter.Blur.NORMAL
+                    android.graphics.BlurMaskFilter.Blur.NORMAL,
                 )
-            }
-        }
-        val borderPaint = androidx.compose.ui.graphics.Paint().apply {
-            asFrameworkPaint().apply {
+            },
+            android.graphics.Paint().apply {
+                isAntiAlias = true
                 this.shader = shader
                 style = android.graphics.Paint.Style.STROKE
                 strokeWidth = 4.5.dp.toPx()
-            }
-        }
+            },
+        )
+        val outline = shape.createOutline(size, layoutDirection, this)
 
-        drawIntoCanvas { canvas ->
-            val outline = shape.createOutline(size, layoutDirection, this)
-            when (outline) {
-                is androidx.compose.ui.graphics.Outline.Rectangle -> {
-                    canvas.drawRect(outline.rect, paint1)
-                    canvas.drawRect(outline.rect, paint2)
-                    canvas.drawRect(outline.rect, borderPaint)
-                }
-                is androidx.compose.ui.graphics.Outline.Rounded -> {
-                    val roundRect = outline.roundRect
-                    canvas.nativeCanvas.drawRoundRect(
-                        roundRect.left, roundRect.top, roundRect.right, roundRect.bottom,
-                        roundRect.bottomLeftCornerRadius.x, roundRect.bottomLeftCornerRadius.y,
-                        paint1.asFrameworkPaint()
-                    )
-                    canvas.nativeCanvas.drawRoundRect(
-                        roundRect.left, roundRect.top, roundRect.right, roundRect.bottom,
-                        roundRect.bottomLeftCornerRadius.x, roundRect.bottomLeftCornerRadius.y,
-                        paint2.asFrameworkPaint()
-                    )
-                    canvas.nativeCanvas.drawRoundRect(
-                        roundRect.left, roundRect.top, roundRect.right, roundRect.bottom,
-                        roundRect.bottomLeftCornerRadius.x, roundRect.bottomLeftCornerRadius.y,
-                        borderPaint.asFrameworkPaint()
-                    )
-                }
-                is androidx.compose.ui.graphics.Outline.Generic -> {
-                    canvas.drawPath(outline.path, paint1)
-                    canvas.drawPath(outline.path, paint2)
-                    canvas.drawPath(outline.path, borderPaint)
+        onDrawBehind {
+            matrix.setRotate(rotation.value, centerX, centerY)
+            shader.setLocalMatrix(matrix)
+
+            drawIntoCanvas { canvas ->
+                val native = canvas.nativeCanvas
+                when (outline) {
+                    is Outline.Rectangle -> {
+                        val r = outline.rect
+                        for (i in paints.indices) {
+                            native.drawRect(r.left, r.top, r.right, r.bottom, paints[i])
+                        }
+                    }
+                    is Outline.Rounded -> {
+                        val r = outline.roundRect
+                        for (i in paints.indices) {
+                            native.drawRoundRect(
+                                r.left, r.top, r.right, r.bottom,
+                                r.bottomLeftCornerRadius.x, r.bottomLeftCornerRadius.y,
+                                paints[i],
+                            )
+                        }
+                    }
+                    is Outline.Generic -> {
+                        val p = outline.path.asAndroidPath()
+                        for (i in paints.indices) native.drawPath(p, paints[i])
+                    }
                 }
             }
         }

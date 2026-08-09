@@ -94,7 +94,11 @@ fun SearchScreen(
                 contentPadding = PaddingValues(bottom = 100.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(results) { item ->
+                // Keyed so that refining a query re-uses the cards for titles
+                // that survive it instead of rebuilding — and, more visibly on
+                // a remote, so focus stays on the card it was on rather than
+                // jumping to whatever now occupies that index.
+                items(results, key = { it.key }) { item ->
                     PosterCard(
                         item = item,
                         onClick = { onOpenTitle(item) }

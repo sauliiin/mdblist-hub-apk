@@ -2,12 +2,15 @@ package com.mdblisthub.tv.core.data.mapper
 
 import com.mdblisthub.tv.core.model.SubtitleCue
 import com.mdblisthub.tv.core.model.SubtitleTrack
+import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.IllegalCharsetNameException
 import java.nio.charset.UnsupportedCharsetException
+import java.util.zip.GZIPInputStream
+import java.util.zip.ZipInputStream
 
 /**
  * Turns a downloaded subtitle file into cues this app can draw itself.
@@ -27,7 +30,7 @@ import java.nio.charset.UnsupportedCharsetException
 object SubtitleFileParser {
 
     fun parse(bytes: ByteArray, declaredEncoding: String? = null): SubtitleTrack {
-        val text = decode(bytes, declaredEncoding)
+        val text = decode(unwrap(bytes), declaredEncoding)
         val cues = when {
             text.startsWith(WEBVTT_MAGIC) -> parseBlocks(text)
             text.contains(ASS_EVENTS, ignoreCase = true) ||
@@ -37,26 +40,74 @@ object SubtitleFileParser {
         return SubtitleTrack(cues)
     }
 
+    // ------------------------------------------------------------ container
+
+    /**
+     * Unpacks the archive an addon may have handed back instead of a subtitle.
+     *
+     * OpenSubtitles serves the same "download" URL as plain text, as a zip or
+     * as gzip depending on the mirror, and nothing in the response says which
+     * — the Kodi addons that do this reliably all sniff the magic bytes, so
+     * this does too. Without it a zipped file reaches the text parser as
+     * binary, yields no cues, and looks exactly like "the subtitle is broken".
+     *
+     * Anything that fails to unpack is returned untouched: a false positive on
+     * two bytes should degrade to "try parsing it as text", never to an error.
+     */
+    private fun unwrap(bytes: ByteArray): ByteArray = when {
+        bytes.size >= 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte() ->
+            runCatching { unzip(bytes) }.getOrNull() ?: bytes
+
+        bytes.size >= 2 && bytes[0] == 0x1F.toByte() && bytes[1] == 0x8B.toByte() ->
+            runCatching {
+                GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+            }.getOrNull() ?: bytes
+
+        else -> bytes
+    }
+
+    /** The first subtitle-looking entry, or the first entry at all. */
+    private fun unzip(bytes: ByteArray): ByteArray? {
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            var fallback: ByteArray? = null
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (entry.isDirectory) continue
+                val content = zip.readBytes()
+                if (SUBTITLE_SUFFIXES.any { entry.name.endsWith(it, ignoreCase = true) }) return content
+                if (fallback == null) fallback = content
+            }
+            return fallback
+        }
+    }
+
     // ------------------------------------------------------------- encoding
 
     /**
-     * Addon subtitles are frequently Latin-1 despite what the header says, and
-     * a Portuguese subtitle decoded as the wrong one is a screen of question
-     * marks. Order of trust: a byte-order mark (which cannot lie), then the
-     * declared charset, then UTF-8 — and UTF-8 is verified rather than
-     * assumed, because a strict decode failing is itself the reliable signal
-     * that this is one of the Latin-1 files.
+     * Order of trust: a byte-order mark, then UTF-8, then whatever the addon
+     * *said* it was, then Latin-1.
+     *
+     * The declared charset used to come second and that was wrong. What the
+     * addon declares is routinely a lie — OpenSubtitles serves this exact
+     * film's Brazilian subtitle tagged `CP1252` while the bytes are plainly
+     * UTF-8 — and the lie is not harmless, because windows-1252 can decode
+     * *any* byte sequence: trusting it never fails, it just silently turns
+     * every "ç" into "Ã§". A strict UTF-8 decode, by contrast, cannot succeed
+     * by accident on a Latin-1 file, so succeeding *is* the proof. Only once
+     * that has failed is the declared charset worth consulting.
      */
     private fun decode(bytes: ByteArray, declaredEncoding: String?): String {
         bomCharset(bytes)?.let { (charset, offset) ->
             return String(bytes, offset, bytes.size - offset, charset)
         }
 
+        strictDecode(bytes, Charsets.UTF_8)?.let { return it }
+
         declaredEncoding
             ?.let(::charsetOrNull)
             ?.let { charset -> strictDecode(bytes, charset)?.let { return it } }
 
-        return strictDecode(bytes, Charsets.UTF_8) ?: String(bytes, FALLBACK_CHARSET)
+        return String(bytes, FALLBACK_CHARSET)
     }
 
     private fun bomCharset(bytes: ByteArray): Pair<Charset, Int>? = when {
@@ -227,11 +278,22 @@ object SubtitleFileParser {
     private const val ASS_DEFAULT_START = 1
     private const val ASS_DEFAULT_END = 2
     private const val ASS_DEFAULT_TEXT = 9
+    private val SUBTITLE_SUFFIXES = listOf(".srt", ".vtt", ".ass", ".ssa", ".sub")
 
     private val FALLBACK_CHARSET: Charset = Charset.forName("windows-1252")
     private val BLANK_LINE = Regex("""\r?\n[ \t]*\r?\n""")
     private val TIMESTAMP = Regex("""(?:(\d{1,3}):)?(\d{1,2}):(\d{1,2})[.,](\d{1,3})""")
-    private val ASS_OVERRIDE = Regex("""\{[^}]*}""")
+    /**
+     * The closing brace is escaped, and that is not cosmetic.
+     *
+     * Android's `java.util.regex` is backed by ICU, which rejects a bare `}`
+     * as a dangling quantifier where the desktop JVM quietly accepts it. Since
+     * these patterns are `val`s on an object, the failure surfaced as an
+     * `ExceptionInInitializerError` on the very first parse — taking down
+     * *every* subtitle on *every* device, while a JVM unit test of the same
+     * parser passed. The bug is invisible off-device by construction.
+     */
+    private val ASS_OVERRIDE = Regex("""\{[^}]*\}""")
     private val ASS_NEWLINE = Regex("""\\[Nn]""")
     private val ASS_HARD_SPACE = Regex("""\\h""")
     private val HTML_TAG = Regex("""<[^>]*>""")

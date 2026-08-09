@@ -78,6 +78,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.HubSpinner
@@ -91,6 +92,14 @@ import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
 
 private const val OSD_TIMEOUT_MS = 4_000L
+
+/**
+ * Caption metrics. The line height is ~1.35x the glyph size — roughly what
+ * broadcast subtitles use, and enough air that a two-line cue reads as two
+ * lines from a sofa rather than as one block of text.
+ */
+private val SUBTITLE_FONT_SIZE = 26.sp
+private val SUBTITLE_LINE_HEIGHT = 35.sp
 private const val SEEK_STEP_MS = 10_000L
 private const val SUBTITLE_OFFSET_STEP_MS = 100L
 private const val FOCUS_RESTORE_ATTEMPTS = 3
@@ -345,6 +354,8 @@ fun PlayerScreen(
                 showAddons = ui.noAddons || playback.phase == PlaybackPhase.FAILED,
                 onOpenAddons = onOpenAddons,
                 onBack = onBack,
+                sources = playback.availableSources,
+                onSelectSource = { stream -> viewModel.controller.playManual(stream) },
             )
         }
 
@@ -505,12 +516,34 @@ private fun FailureVeil(
     showAddons: Boolean,
     onOpenAddons: () -> Unit,
     onBack: () -> Unit,
+    /**
+     * Every source the automatic cascade tried, offered up for a manual pick
+     * now that trying them itself has failed. Empty for every failure that
+     * isn't [PlaybackPhase.FAILED] — a missing addon or IMDb id has no
+     * candidates to list in the first place.
+     */
+    sources: List<PlayableStream> = emptyList(),
+    onSelectSource: (PlayableStream) -> Unit = {},
 ) {
     // Without this the D-pad has nothing focused to move from, since the
     // only thing that ever claimed focus was the player screen's own root
-    // Box underneath this veil.
+    // Box underneath this veil. Re-keyed on the source list so a manual pick
+    // that itself fails re-focuses the first row again, not empty space.
     val primaryFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { primaryFocus.requestFocus() }
+
+    // Retried across frames rather than requested once. When [sources] is
+    // non-empty the target is a LazyColumn row, and a lazy list composes and
+    // places its items during *layout* — after this effect first runs. A
+    // single request therefore fires before row zero exists, throws, and
+    // leaves nothing focused at all: the picker still answers a tap, so it
+    // looks fine on a phone or under `adb input tap`, while on the remote
+    // this screen actually ships to, every key press does nothing.
+    LaunchedEffect(sources) {
+        repeat(FOCUS_RESTORE_ATTEMPTS) {
+            withFrameNanos { }
+            if (runCatching { primaryFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         FanartBackdrop(url = backdropUrl, scrim = 0.94f)
@@ -533,20 +566,85 @@ private fun FailureVeil(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(max = 640.dp),
             )
+
+            if (sources.isNotEmpty()) {
+                Spacer(Modifier.height(22.dp))
+                Text(
+                    text = "Ou escolha uma fonte manualmente",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = HubColors.Text,
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .widthIn(max = 640.dp)
+                        .heightIn(max = 280.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(HubColors.Surface)
+                        .border(1.dp, HubColors.Border, RoundedCornerShape(14.dp)),
+                ) {
+                    itemsIndexed(sources, key = { _, stream -> stream.key }) { index, stream ->
+                        SourceRow(
+                            stream = stream,
+                            onClick = { onSelectSource(stream) },
+                            modifier = if (index == 0) Modifier.focusRequester(primaryFocus) else Modifier,
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(26.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (showAddons) {
                     HubButton(
                         "Ver addons",
                         onOpenAddons,
-                        modifier = Modifier.focusRequester(primaryFocus),
+                        modifier = if (sources.isEmpty()) Modifier.focusRequester(primaryFocus) else Modifier,
                         primary = true,
                     )
                     HubButton("Voltar", onBack)
                 } else {
-                    HubButton("Voltar", onBack, modifier = Modifier.focusRequester(primaryFocus))
+                    HubButton(
+                        "Voltar",
+                        onBack,
+                        modifier = if (sources.isEmpty()) Modifier.focusRequester(primaryFocus) else Modifier,
+                    )
                 }
             }
+        }
+    }
+}
+
+/** One row of [FailureVeil]'s manual source list — an addon, a quality, a size. */
+@Composable
+private fun SourceRow(
+    stream: PlayableStream,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .background(if (focused) HubColors.Accent.copy(alpha = 0.3f) else HubColors.Background.copy(alpha = 0f))
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = stream.title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (focused) HubColors.AccentSoft else HubColors.Text,
+        )
+        val meta = listOfNotNull(stream.quality, stream.size, stream.addon).joinToString("  •  ")
+        if (meta.isNotEmpty()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.labelSmall,
+                color = HubColors.TextDim,
+            )
         }
     }
 }
@@ -581,9 +679,15 @@ private fun ExternalSubtitleOverlay(
             .padding(bottom = bottomPadding)
             .semantics { liveRegion = LiveRegionMode.Polite },
         color = Color.Yellow,
-        fontSize = 26.sp,
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodyLarge.copy(
+            fontSize = SUBTITLE_FONT_SIZE,
+            // Set explicitly, and that is the whole fix for two-line cues
+            // crowding each other. `fontSize` was being overridden to 26sp
+            // while `lineHeight` kept coming from `bodyLarge`, which is sized
+            // for a ~16sp body — so the gap between lines was *smaller* than
+            // the glyphs themselves and a two-liner read as one dense block.
+            lineHeight = SUBTITLE_LINE_HEIGHT,
             shadow = Shadow(color = Color.Black, offset = Offset(2f, 2f), blurRadius = 6f),
         ),
     )

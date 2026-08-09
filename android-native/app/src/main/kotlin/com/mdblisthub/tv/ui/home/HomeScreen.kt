@@ -85,20 +85,18 @@ private const val ROW_PIVOT = 0.3f
  * `PivotBringIntoViewSpec`, in its Android source set because it exists for
  * televisions — but it is `internal`, so the geometry is restated here.
  *
- * A spring, not a tween, and a stiff one. Two reasons. The pivot means every
- * press now scrolls — the old minimal-scroll often moved nothing at all — so
- * the duration is paid on every single press and a leisurely one reads as
- * lag. And holding the direction key fires presses faster than any animation
- * finishes: a tween restarts from zero each time, so the list visibly trails
- * the focus, while a spring retargets from wherever it is and keeps its
- * velocity, which is what makes a held key feel like one continuous glide.
- * `DampingRatioNoBouncy` is what keeps "spring" from meaning "wobbles".
+ * There used to be a `scrollAnimationSpec` override here — a stiff, non-bouncy
+ * spring, chosen because the pivot makes *every* press scroll and a held
+ * direction key needs an animation that retargets from wherever it is rather
+ * than restarting. Compose has since deprecated that member outright
+ * ("Animation spec customization is no longer supported") and no longer reads
+ * it anywhere, so the override was doing nothing but emitting a warning. The
+ * scroll it now uses is the framework's own, which is already a spring with
+ * exactly that retargeting behaviour; only the landing point below was ever
+ * the part Compose could not supply.
  */
 @OptIn(ExperimentalFoundationApi::class)
 private val RowPivotScroll = object : BringIntoViewSpec {
-    override val scrollAnimationSpec: AnimationSpec<Float> =
-        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
-
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         val pivot = if (HubColors.isNetflixy) 0.18f * containerSize else ROW_PIVOT * containerSize
 
@@ -205,7 +203,9 @@ fun HomeScreen(
                         "search" -> onOpenSearch()
                         "addons" -> onOpenAddons()
                         "lists" -> viewModel.toggleEditMode()
-                        "theme" -> HubColors.toggleTheme()
+                        // Through the ViewModel, not HubColors directly: the
+                        // choice has to be persisted as well as painted.
+                        "theme" -> viewModel.cycleTheme()
                         "exit" -> showExitDialog = true
                     }
                 },

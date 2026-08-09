@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.baselineprofile)
 }
 
 android {
@@ -93,5 +94,15 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
+    // Reads the profile baked in below and hands it to ART at install time.
+    // Without this the profile ships inside the APK and is never applied — on
+    // a set-top box that is the difference between the first launch running
+    // compiled and running interpreted.
+    implementation(libs.profileinstaller)
+
     debugImplementation(libs.compose.ui.tooling)
+
+    // Where the profile comes from. `:baselineprofile` builds nothing that
+    // ships; this wiring is what makes its output land in the release APK.
+    baselineProfile(projects.baselineprofile)
 }

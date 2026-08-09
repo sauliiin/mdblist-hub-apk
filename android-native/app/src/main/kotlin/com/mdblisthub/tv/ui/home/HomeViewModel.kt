@@ -7,6 +7,7 @@ import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaList
 import com.mdblisthub.tv.core.model.RecommendationRow
 import com.mdblisthub.tv.core.model.ResumePoint
+import com.mdblisthub.tv.core.ui.theme.HubColors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +50,17 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
 
     fun toggleEditMode() {
         _isEditMode.value = !_isEditMode.value
+    }
+
+    /**
+     * Advances the palette and writes the choice down, so the box comes back
+     * in it. The repaint is immediate and the write is not waited on: the
+     * palette is in-memory state, and the store only has to agree with it by
+     * the next cold start.
+     */
+    fun cycleTheme() {
+        val next = HubColors.toggleTheme()
+        viewModelScope.launch { graph.uiPreferences.saveTheme(next) }
     }
 
     fun toggleListVisibility(list: MediaList) {

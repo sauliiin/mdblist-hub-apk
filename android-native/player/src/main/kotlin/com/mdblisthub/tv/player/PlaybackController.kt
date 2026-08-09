@@ -33,13 +33,17 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Plays a title, deciding on its own which link to use.
+ * Plays a title, deciding on its own which link to use — until it can't.
  *
- * The design rule this whole class exists to serve: **the user never picks a
- * source.** They press play, and a queue of candidates is walked until one
- * produces a frame. A dead mirror, an expired debrid token or a container the
- * decoder chokes on are all the same event here — move to the next one — and
- * none of them is worth a dialog.
+ * The design rule this class serves: **the user does not pick a source while
+ * automatic playback still has a chance.** They press play, and a queue of
+ * candidates is walked until one produces a frame. A dead mirror, an expired
+ * debrid token or a container the decoder chokes on are all the same event
+ * here — move to the next one — and none of them is worth a dialog. Only once
+ * every candidate has failed (see [fail]) is the same queue handed to the UI
+ * as [PlaybackState.availableSources], so the user can try one by hand via
+ * [playManual] — at that point automatic failover has already proven it
+ * cannot decide for them.
  *
  * Candidates arrive as a [Flow] rather than a finished [List]: the repository
  * probes every mirror in parallel and hands each one over the moment it is
@@ -160,6 +164,17 @@ class PlaybackController(
     private var awaitingCandidate = false
     private var candidatesJob: Job? = null
 
+    /**
+     * True once the user has picked a source by hand, via [playManual].
+     *
+     * The automatic cascade's whole job is to fail through candidates
+     * silently and only bother the user once none of them work; once they
+     * are choosing themselves, a failure has to say so plainly instead of
+     * quietly trying something else in its place, so every failure path
+     * checks this before falling back to [tryAdvance].
+     */
+    private var manualMode = false
+
     /** Resume point, applied once a source is actually ready. */
     private var resumePercent: Float? = null
     private var resumeApplied = false
@@ -240,6 +255,7 @@ class PlaybackController(
         passes = 0
         decoyIndices.clear()
         decoyStreak = 0
+        manualMode = false
         expectedRuntimeMs = expectedRuntimeMinutes
             ?.takeIf { it > 0 }
             ?.let { it * 60_000L }
@@ -338,6 +354,49 @@ class PlaybackController(
     }
 
     /**
+     * Plays exactly the source the user picked, bypassing the cascade
+     * entirely — called once [PlaybackPhase.FAILED] has already offered up
+     * [PlaybackState.availableSources] and the user tapped one of them.
+     *
+     * [queue] and [expectedRuntimeMs] are left untouched: the list the veil
+     * is showing came from `queue`, and re-failing has to be able to show it
+     * again, while a decoy is still a decoy regardless of who chose it.
+     */
+    fun playManual(stream: PlayableStream) {
+        watchdog?.cancel()
+        ticker?.cancel()
+        candidatesJob?.cancel()
+        candidatesCollecting = false
+        awaitingCandidate = false
+        manualMode = true
+        decoyStreak = 0
+
+        val url = stream.url
+        if (url == null) {
+            fail("Essa fonte não tem um link reproduzível.")
+            return
+        }
+
+        _state.update {
+            // attempt/candidateCount reset to 0 rather than left at whatever
+            // the cascade last set them to: the veil reads "N de M" off them,
+            // and a leftover "6 de 42" from the automatic pass would claim
+            // this one pick is somehow the sixth of forty-two.
+            it.copy(phase = PlaybackPhase.RESOLVING, attempt = 0, candidateCount = 0, error = null)
+        }
+
+        httpDataSourceFactory.setDefaultRequestProperties(stream.headers)
+        val mediaItem = MediaItem.fromUri(url)
+        failoverPositionMs?.let { position ->
+            player.setMediaItem(mediaItem, position)
+        } ?: player.setMediaItem(mediaItem)
+        player.prepare()
+        player.playWhenReady = failoverPlayWhenReady ?: true
+
+        watchdog = scope.launch { watchAttempt() }
+    }
+
+    /**
      * Decides when a candidate has had long enough, by watching whether it is
      * actually downloading rather than by a stopwatch alone.
      *
@@ -381,7 +440,11 @@ class PlaybackController(
             // accepts a connection and then goes quiet forever.
             val dead = everDelivered && stalledMs >= ATTEMPT_STALL_MS
             if (dead || waitedMs >= ATTEMPT_HARD_CAP_MS) {
-                tryAdvance()
+                if (manualMode) {
+                    fail("Essa fonte não respondeu. Escolha outra na lista.")
+                } else {
+                    tryAdvance()
+                }
                 return
             }
         }
@@ -416,7 +479,11 @@ class PlaybackController(
      */
     override fun onPlayerError(error: PlaybackException) {
         rememberPlaybackForFailover()
-        tryAdvance()
+        if (manualMode) {
+            fail("Essa fonte não abriu. Escolha outra na lista.")
+        } else {
+            tryAdvance()
+        }
     }
 
     override fun onTracksChanged(tracks: Tracks) {
@@ -541,6 +608,15 @@ class PlaybackController(
     private fun rejectDecoy() {
         watchdog?.cancel()
         watchdog = null
+
+        if (manualMode) {
+            fail(
+                "Essa fonte devolveu um aviso no lugar do filme, não o filme em si. " +
+                    "Escolha outra na lista.",
+            )
+            return
+        }
+
         decoyIndices += queueIndex
         decoyStreak++
 
@@ -562,7 +638,9 @@ class PlaybackController(
         watchdog?.cancel()
         ticker?.cancel()
         runCatching { player.stop() }
-        _state.update { it.copy(phase = PlaybackPhase.FAILED, error = message) }
+        _state.update {
+            it.copy(phase = PlaybackPhase.FAILED, error = message, availableSources = queue.toList())
+        }
     }
 
     /**
@@ -766,6 +844,7 @@ class PlaybackController(
     fun stop() {
         stopInternal()
         subtitleTrack = null
+        manualMode = false
         _state.value = PlaybackState()
     }
 

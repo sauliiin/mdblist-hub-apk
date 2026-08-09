@@ -34,4 +34,8 @@ include(
     ":core:data",
     ":core:ui",
     ":player",
+    // Not shipped. Builds a `com.android.test` APK that drives the release
+    // app on a device to record which code its startup actually runs; the
+    // result is baked into the release APK by the plugin.
+    ":baselineprofile",
 )

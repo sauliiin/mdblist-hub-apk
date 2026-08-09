@@ -35,8 +35,9 @@ data class PlayerUiState(
  *
  * The order of operations is the whole user-visible design: ask the addons,
  * rank what comes back, hand the *entire* ranked list to the controller and
- * let it find one that works. At no point is there a list for anyone to look
- * at — pressing play is the last decision the user makes.
+ * let it find one that works. Pressing play is the last decision the user
+ * makes — unless the cascade exhausts every candidate, at which point
+ * `PlaybackController.playManual` lets them make one more.
  */
 class PlayerViewModel(
     private val graph: DataGraph,

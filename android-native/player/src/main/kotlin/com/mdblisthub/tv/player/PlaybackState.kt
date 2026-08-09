@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.player
 
+import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
 
 /**
@@ -79,6 +80,13 @@ data class PlaybackState(
     val activeSubtitleCue: String? = null,
     val scaleType: VideoScaleType = VideoScaleType.FIT,
     val error: String? = null,
+    /**
+     * Every candidate the cascade collected, offered up once [PlaybackPhase.FAILED]
+     * is reached so the user can pick one by hand instead of being stuck on the
+     * error. Empty on every other phase — nothing in this app shows a list of
+     * sources while the automatic attempt still has a chance to work.
+     */
+    val availableSources: List<PlayableStream> = emptyList(),
 ) {
     val isPlaying: Boolean get() = phase == PlaybackPhase.PLAYING
     val canShowVideo: Boolean

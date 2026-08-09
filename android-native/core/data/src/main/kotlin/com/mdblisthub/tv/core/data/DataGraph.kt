@@ -39,6 +39,7 @@ class DataGraph(context: Context) {
     val database = HubDatabase.create(appContext)
     val session = SessionStore(appContext)
     val syncStore = SyncStore(appContext)
+    val uiPreferences = UiPreferencesStore(appContext)
 
     val auth = AuthRepository(network.mdblist, session, database)
     val lists = ListsRepository(network.mdblist, session, database)

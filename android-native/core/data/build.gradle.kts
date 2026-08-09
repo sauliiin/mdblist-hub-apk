@@ -23,4 +23,8 @@ dependencies {
     api(libs.datastore.preferences)
     implementation(libs.serialization.json)
     implementation(libs.coroutines.android)
+
+    // `SubtitleFileParser` is pure JVM on purpose, so the files that actually
+    // break it can be checked in and run without a device.
+    testImplementation(libs.junit)
 }

@@ -676,7 +676,12 @@ private fun ReviewsRow(reviews: List<Review>) {
                         )
                         review.rating?.let {
                             Text(
-                                text = "★ ${String.format("%.1f", it)}",
+                                // Locale-explicit: the no-arg overload formats
+                                // with whatever the box's default is, so the
+                                // same rating rendered "8.4" or "8,4" purely
+                                // by device, out of step with every other
+                                // number in this app.
+                                text = "★ ${String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f", it)}",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = HubColors.Imdb,
                             )
