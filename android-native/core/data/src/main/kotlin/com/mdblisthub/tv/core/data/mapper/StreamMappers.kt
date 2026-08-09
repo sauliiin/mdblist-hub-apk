@@ -4,8 +4,10 @@ import com.mdblisthub.tv.core.model.Addon
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.StreamKind
 import com.mdblisthub.tv.core.model.SubtitleOption
+import com.mdblisthub.tv.core.network.dto.OpenSubtitlesItemDto
 import com.mdblisthub.tv.core.network.dto.StremioStreamDto
 import com.mdblisthub.tv.core.network.dto.StremioSubtitleDto
+import com.mdblisthub.tv.core.network.dto.WyzieItemDto
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -127,7 +129,57 @@ fun StremioSubtitleDto.toOption(addon: Addon, index: Int) = SubtitleOption(
     lang = lang.orEmpty(),
     url = url,
     encoding = encoding,
+    releaseHint = listOfNotNull(title, release, subFileName).firstOrNull { it.isNotBlank() },
 )
+
+/**
+ * A search result names a file, not a downloadable URL — minting the real
+ * one costs against OpenSubtitles.com's daily quota (see
+ * [com.mdblisthub.tv.core.network.OpenSubtitlesApi.download]), so the
+ * result's [url] is this marker plus the file id instead, and stays that
+ * way until [com.mdblisthub.tv.core.data.repository.StreamsRepository]
+ * actually resolves it for the one subtitle someone asked for.
+ */
+const val OPENSUBTITLES_FILE_SCHEME = "opensubtitles-file:"
+
+/** Skips a result with no attached file — the API's search can return one. */
+fun OpenSubtitlesItemDto.toOption(index: Int): SubtitleOption? {
+    val file = attributes.files.firstOrNull() ?: return null
+    val lang = attributes.language?.takeIf { it.isNotBlank() } ?: return null
+
+    return SubtitleOption(
+        key = "opensubtitles.com#${file.fileId}",
+        addon = "OpenSubtitles.com",
+        label = Languages.label(lang),
+        lang = lang,
+        url = "$OPENSUBTITLES_FILE_SCHEME${file.fileId}",
+        releaseHint = attributes.release ?: file.fileName,
+        popularity = attributes.downloadCount,
+    )
+}
+
+/**
+ * `normalizedLang` comes from the caller, not [WyzieItemDto.language]: Wyzie
+ * is queried one language at a time — see [ApiConfig.WYZIE_BASE] — so which
+ * bucket a result belongs to is already known before this runs, and trusting
+ * that is simpler than re-deriving it from a field the API itself is
+ * inconsistent about (`"pb"` for Brazilian Portuguese, which nothing else in
+ * this app recognises as a Portuguese code).
+ */
+fun WyzieItemDto.toOption(index: Int, normalizedLang: String): SubtitleOption? {
+    val downloadUrl = url?.takeIf { it.isNotBlank() } ?: return null
+
+    return SubtitleOption(
+        key = "wyzie#${id ?: index}",
+        addon = "Wyzie",
+        label = Languages.label(normalizedLang),
+        lang = normalizedLang,
+        url = downloadUrl,
+        encoding = encoding,
+        releaseHint = release ?: fileName,
+        popularity = downloadCount,
+    )
+}
 
 /**
  * OpenSubtitles mirrors hand the same file back under several ids, so the URL

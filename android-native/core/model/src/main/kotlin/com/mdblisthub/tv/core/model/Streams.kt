@@ -67,4 +67,18 @@ data class SubtitleOption(
     val lang: String,
     val url: String,
     val encoding: String? = null,
+    /**
+     * Whatever release-identifying text the addon volunteered — not part of
+     * the Stremio subtitle protocol, so usually null. What auto-matching a
+     * subtitle to the playing release is built on; see `SubtitleMatcher`.
+     */
+    val releaseHint: String? = null,
+    /**
+     * Downloads/uses the source itself reports, where it reports one — the
+     * Stremio addon protocol doesn't carry this either, so an addon-sourced
+     * option is always 0. `SubtitleMatcher`'s tiebreaker when the token match
+     * between two options is equal, most often because neither has a
+     * [releaseHint] to compare in the first place.
+     */
+    val popularity: Int = 0,
 )

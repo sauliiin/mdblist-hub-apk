@@ -127,6 +127,7 @@ fun buildDetailEntity(
     tmdb: TmdbDetailDto,
     info: MdbInfoDto?,
     omdb: OmdbDto?,
+    fanartTvBackdropUrl: String?,
     now: Long,
     metadataComplete: Boolean = true,
 ): MediaDetailEntity {
@@ -154,7 +155,7 @@ fun buildDetailEntity(
             ?: info?.description
             ?: omdb?.plot.orNullIfNA(),
         posterUrl = TmdbImages.url(tmdb.posterPath, TmdbImages.POSTER_LARGE),
-        backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART),
+        backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART) ?: fanartTvBackdropUrl,
         logoUrl = TmdbImages.url(logo?.filePath, TmdbImages.LOGO),
         year = date?.take(4)?.toIntOrNull() ?: info?.year,
         releaseDate = date,

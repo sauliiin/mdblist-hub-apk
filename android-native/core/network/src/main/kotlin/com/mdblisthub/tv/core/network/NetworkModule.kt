@@ -33,6 +33,7 @@ class NetworkModule(context: Context) {
     val mdblist: MdblistApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()
     val tmdb: TmdbApi = retrofit(ApiConfig.TMDB_BASE, metadataClient).create()
     val omdb: OmdbApi = retrofit(ApiConfig.OMDB_BASE, metadataClient).create()
+    val fanartTv: FanartTvApi = retrofit(ApiConfig.FANART_TV_BASE, metadataClient).create()
 
     /**
      * Every call takes a full `@Url`, so the base is only there to satisfy
@@ -50,6 +51,17 @@ class NetworkModule(context: Context) {
     val wikipedia: WikipediaApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()
 
     val imdb: ImdbApi = retrofit(ApiConfig.IMDB_GRAPHQL_BASE, metadataClient).create()
+
+    /** OpenSubtitles.com's own API — see [ApiConfig.OPENSUBTITLES_BASE]. */
+    val openSubtitles: OpenSubtitlesApi =
+        retrofit(ApiConfig.OPENSUBTITLES_BASE, HttpClients.openSubtitles(metadataClient)).create()
+
+    /**
+     * Wyzie's own API — see [ApiConfig.WYZIE_BASE]. No dedicated client: its
+     * key travels as a query param, not a header, so there is nothing for a
+     * client-level interceptor to attach.
+     */
+    val wyzie: WyzieApi = retrofit(ApiConfig.WYZIE_BASE, metadataClient).create()
 
     private fun retrofit(base: String, client: OkHttpClient): Retrofit =
         Retrofit.Builder()

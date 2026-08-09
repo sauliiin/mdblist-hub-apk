@@ -65,4 +65,15 @@ data class StremioSubtitleDto(
     val url: String = "",
     val lang: String? = null,
     @SerialName("SubEncoding") val encoding: String? = null,
+    /**
+     * The Stremio subtitle protocol only guarantees `id`/`url`/`lang` — a
+     * release name is not part of the spec. Some addons send one anyway,
+     * under whichever of these keys that particular author picked; every
+     * candidate is optional and most responses will have none of them.
+     * See [SubtitleMatcher][com.mdblisthub.tv.core.data.mapper.SubtitleMatcher]
+     * for what this enables when one is present.
+     */
+    val title: String? = null,
+    val release: String? = null,
+    @SerialName("SubFileName") val subFileName: String? = null,
 )

@@ -335,6 +335,7 @@ class PlaybackController(
                 attempt = queueIndex + 1,
                 candidateCount = queue.size,
                 error = null,
+                activeStream = candidate,
             )
         }
 
@@ -382,7 +383,13 @@ class PlaybackController(
             // the cascade last set them to: the veil reads "N de M" off them,
             // and a leftover "6 de 42" from the automatic pass would claim
             // this one pick is somehow the sixth of forty-two.
-            it.copy(phase = PlaybackPhase.RESOLVING, attempt = 0, candidateCount = 0, error = null)
+            it.copy(
+                phase = PlaybackPhase.RESOLVING,
+                attempt = 0,
+                candidateCount = 0,
+                error = null,
+                activeStream = stream,
+            )
         }
 
         httpDataSourceFactory.setDefaultRequestProperties(stream.headers)

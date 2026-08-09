@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.data.repository
 
+import com.mdblisthub.tv.core.data.mapper.OPENSUBTITLES_FILE_SCHEME
 import com.mdblisthub.tv.core.data.mapper.SubtitleFileParser
 import com.mdblisthub.tv.core.data.mapper.rankForPlayback
 import com.mdblisthub.tv.core.data.mapper.rankSubtitles
@@ -9,7 +10,11 @@ import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.model.SubtitleTrack
+import com.mdblisthub.tv.core.network.ApiConfig
+import com.mdblisthub.tv.core.network.OpenSubtitlesApi
 import com.mdblisthub.tv.core.network.StremioApi
+import com.mdblisthub.tv.core.network.WyzieApi
+import com.mdblisthub.tv.core.network.dto.OpenSubtitlesDownloadRequestDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -37,6 +42,8 @@ class StreamsRepository(
     private val api: StremioApi,
     private val addons: AddonsRepository,
     addonClient: OkHttpClient,
+    private val openSubtitlesApi: OpenSubtitlesApi,
+    private val wyzieApi: WyzieApi,
 ) {
 
     /**
@@ -152,7 +159,8 @@ class StreamsRepository(
      */
     suspend fun subtitleTrack(option: SubtitleOption): SubtitleTrack? = withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder().url(option.url).build()
+            val url = resolveSubtitleUrl(option.url) ?: return@runCatching null
+            val request = Request.Builder().url(url).build()
             subtitleClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 SubtitleFileParser.parse(response.body.bytes(), option.encoding)
@@ -161,11 +169,34 @@ class StreamsRepository(
     }
 
     /**
-     * The same fan-out for subtitles.
-     *
-     * This lists what is on offer; [subtitleTrack] is what fetches one.
+     * A normal addon URL passes through untouched. An OpenSubtitles.com file
+     * id — see [OPENSUBTITLES_FILE_SCHEME] — is resolved here instead of at
+     * search time, so the account's daily download quota is only ever spent
+     * on the one subtitle actually chosen, not on every result a search
+     * happened to return.
+     */
+    private suspend fun resolveSubtitleUrl(url: String): String? {
+        val fileId = url.removePrefix(OPENSUBTITLES_FILE_SCHEME).toLongOrNull() ?: return url
+        return runCatching {
+            openSubtitlesApi.download(OpenSubtitlesDownloadRequestDto(fileId)).link
+        }.getOrNull()
+    }
+
+    /**
+     * Subtitles from two places at once: whatever the installed Stremio
+     * addons serve, plus a direct OpenSubtitles.com search. The addon
+     * protocol only guarantees `id`/`url`/`lang` — no release name — so
+     * `SubtitleMatcher` has nothing reliable to match against unless this
+     * second source, which does return one, is asked too.
      */
     suspend fun subtitles(type: MediaType, id: String): List<SubtitleOption> = coroutineScope {
+        val addonOptions = async { addonSubtitles(type, id) }
+        val openSubtitlesOptions = async { openSubtitlesSearch(id) }
+        val wyzieOptions = async { wyzieSearch(id) }
+        (addonOptions.await() + openSubtitlesOptions.await() + wyzieOptions.await()).rankSubtitles()
+    }
+
+    private suspend fun addonSubtitles(type: MediaType, id: String): List<SubtitleOption> = coroutineScope {
         val providers = addons.addons().filter { it.serves("subtitles", type, id) }
         if (providers.isEmpty()) return@coroutineScope emptyList()
 
@@ -183,7 +214,54 @@ class StreamsRepository(
             }
             .awaitAll()
             .flatten()
-            .rankSubtitles()
+    }
+
+    /** `id` is `tt1234567` for a film or `tt1234567:season:episode` for an episode. */
+    private suspend fun openSubtitlesSearch(id: String): List<SubtitleOption> {
+        val parts = id.split(':')
+        val imdbId = parts.getOrNull(0)?.removePrefix("tt")?.takeIf { it.isNotBlank() } ?: return emptyList()
+        val season = parts.getOrNull(1)?.toIntOrNull()
+        val episode = parts.getOrNull(2)?.toIntOrNull()
+
+        return runCatching {
+            openSubtitlesApi.search(
+                imdbId = imdbId,
+                languages = "pt-br,en",
+                season = season,
+                episode = episode,
+                type = if (season != null) "episode" else "movie",
+            ).data.mapIndexedNotNull { index, item -> item.toOption(index) }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * One request per language rather than a combined list — see
+     * [ApiConfig.WYZIE_BASE] for why a combined `pb,pt` silently drops the
+     * `pb` results — each tagged with the three-letter code the rest of the
+     * app already knows how to rank and label.
+     */
+    private suspend fun wyzieSearch(id: String): List<SubtitleOption> = coroutineScope {
+        val parts = id.split(':')
+        val imdbId = parts.getOrNull(0)?.takeIf { it.startsWith("tt") } ?: return@coroutineScope emptyList()
+        val season = parts.getOrNull(1)?.toIntOrNull()
+        val episode = parts.getOrNull(2)?.toIntOrNull()
+
+        listOf("pb" to "pob", "pt" to "por", "en" to "eng")
+            .map { (wyzieLang, normalizedLang) ->
+                async {
+                    runCatching {
+                        wyzieApi.search(
+                            imdbId = imdbId,
+                            language = wyzieLang,
+                            apiKey = ApiConfig.WYZIE_API_KEY,
+                            season = season,
+                            episode = episode,
+                        ).mapIndexedNotNull { index, item -> item.toOption(index, normalizedLang) }
+                    }.getOrDefault(emptyList())
+                }
+            }
+            .awaitAll()
+            .flatten()
     }
 
     /** How many installed addons even claim to serve streams for this id. */

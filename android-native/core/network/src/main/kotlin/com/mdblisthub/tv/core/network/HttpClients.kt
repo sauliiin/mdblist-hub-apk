@@ -82,6 +82,20 @@ object HttpClients {
         .callTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * OpenSubtitles.com's own API. Its own client, not [addons], because the
+     * headers [OpenSubtitlesHeadersInterceptor] attaches carry a personal
+     * API key that must never ride along on a request to a third-party
+     * addon host.
+     */
+    fun openSubtitles(base: OkHttpClient): OkHttpClient = base.newBuilder()
+        .cache(null)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor(OpenSubtitlesHeadersInterceptor)
+        .build()
+
     /** Never serve a stale answer for something the user just asked to refresh. */
     val NO_CACHE: CacheControl = CacheControl.Builder().noCache().noStore().build()
 }

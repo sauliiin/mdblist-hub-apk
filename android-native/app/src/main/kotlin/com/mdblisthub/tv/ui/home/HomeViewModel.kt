@@ -106,7 +106,7 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                 flowOf(null)
             } else {
                 graph.media.observeDetail(item.type, item.tmdbId)
-                    .map { detail -> detail?.backdropUrl ?: item.backdropUrl ?: item.posterUrl }
+                    .map { detail -> detail?.backdropUrl ?: item.backdropUrl }
             }
         }
         .distinctUntilChanged()

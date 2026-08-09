@@ -30,6 +30,7 @@ class MediaRepository(
     private val tmdbApi: TmdbApi,
     private val mdblistApi: MdblistApi,
     private val omdbApi: OmdbApi,
+    private val fanartTvApi: com.mdblisthub.tv.core.network.FanartTvApi,
     private val session: SessionStore,
     private val database: HubDatabase,
 ) {
@@ -122,9 +123,24 @@ class MediaRepository(
             if (imdbId.isNullOrBlank()) Result.success(null)
             else runCatching { omdbApi.byImdb(ApiConfig.OMDB_KEY, imdbId, "full") }
         }
+        val fanartTv = async {
+            if (tmdb.backdropPath != null) return@async Result.success(null)
+            val fanartTvId = if (type == MediaType.MOVIE) tmdbId else tmdb.externalIds?.tvdbId
+            if (fanartTvId == null) return@async Result.success(null)
+            runCatching {
+                val fanartType = if (type == MediaType.MOVIE) "movies" else "tv"
+                fanartTvApi.art(fanartType, fanartTvId, ApiConfig.FANART_TV_KEY)
+            }
+        }
 
         val infoResult = info.await()
         val omdbResult = omdb.await()
+        val fanartTvResult = fanartTv.await().getOrNull()
+        
+        val fanartTvBackdropUrl = fanartTvResult?.let { art ->
+            val key = if (type == MediaType.MOVIE) art.moviebackground else art.showbackground
+            key?.maxByOrNull { (it.likes?.toIntOrNull() ?: 0) }?.url
+        }
 
         val entity = buildDetailEntity(
             type = type,
@@ -132,6 +148,7 @@ class MediaRepository(
             tmdb = tmdb,
             info = infoResult.getOrNull(),
             omdb = omdbResult.getOrNull(),
+            fanartTvBackdropUrl = fanartTvBackdropUrl,
             now = System.currentTimeMillis(),
             metadataComplete = infoResult.isSuccess && omdbResult.isSuccess,
         )

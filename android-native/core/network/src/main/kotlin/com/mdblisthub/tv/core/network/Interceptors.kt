@@ -20,6 +20,20 @@ internal object UserAgentInterceptor : Interceptor {
     }
 }
 
+/** Carries the OpenSubtitles.com credentials so the Retrofit interface doesn't have to. */
+internal object OpenSubtitlesHeadersInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .header("Api-Key", ApiConfig.OPENSUBTITLES_API_KEY)
+            .header("User-Agent", ApiConfig.OPENSUBTITLES_USER_AGENT)
+            .header("Accept", "application/json")
+            .build()
+        return chain.proceed(request)
+    }
+}
+
+
+
 /**
  * Gives cacheable answers a lifetime they did not ask for.
  *
